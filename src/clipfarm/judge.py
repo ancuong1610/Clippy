@@ -14,32 +14,47 @@ import os
 import subprocess
 from pathlib import Path
 
+import tomllib
+
 import httpx
 
+EXAMPLES = Path("judge_examples.toml")
 DEFAULT_MODEL = "google/gemini-3.5-flash-lite"
 
 RUBRIC = """You are the strict editor of a YouTube Shorts channel that posts GTA 6 livestream highlights.
 You see {n} frames from a {dur:.0f}s stream clip (in order, with their time in seconds) and the live chat.
 Rate how strong this clip is as a standalone Short for people who never watch this streamer.
 
+Reference moments rated by the channel owner (match your scores to these):
+{examples}
+
 Scale (be harsh; most stream moments are NOT highlights):
-- 95 BENCHMARK: the streamer flies a seaplane, does barrel rolls, crashes into palm trees in a debris
-  explosion, dies and loses his stash; chat floods "o7 crash", "lost everything". A visible, dramatic payoff
-  with a clear setup, a consequence, and a crowd reaction.
-- 90-100: same league: spectacular crash/explosion/death, insane stunt or escape, epic fail or win, a shocking
-  twist, chaos a stranger instantly understands from the picture.
-- 70-89: genuinely funny or notable but smaller: a great reaction to something mild, a funny NPC line,
-  a near-miss, a clever play.
-- 40-69: mild: gym/workout animations, shopping, character customisation, NPC small talk, driving around,
-  settings or menus, cutscene dialogue, the streamer just talking.
-- 0-39: nothing visible happens, loading/black screens, AFK, technical issues.
-Chat spamming emotes or memes alone does NOT make a highlight; the payoff must be visible on screen.
+- 90-100: gameplay with a visible, dramatic payoff a stranger instantly gets: spectacular crash/explosion/death,
+  insane stunt or escape, a chase that ends in chaos, a dangerous animal attack or close call, epic fail or win.
+- 70-89: genuinely funny or notable but smaller: a great reaction to something mild, a near-miss, a clever play.
+- 40-69: mild: gym/workout animations, shopping, outfits, NPC small talk, driving or swimming around,
+  looting, settings or menus, the streamer just talking.
+- 0-39: nothing visible happens, loading/black screens, technical issues.
+HARD RULE: if the payoff is a scripted story CUTSCENE or mission dialogue (letterboxed/cinematic camera, no
+player control), score it 30 or less, however funny or dramatic.
+Chat tells you WHAT happened (e.g. "shark", "o7 crash") — use it to find the moment in the frames, but chat
+spamming memes alone does NOT make a highlight; the payoff must be visible on screen.
 
 LIVE CHAT (seconds from clip start):
 {chat}
 
-Return ONLY JSON: {{"hype": <0-100>, "payoff": "<what visibly happens, max 15 words>",
-"why": "<one sentence: why this score vs the 95 benchmark>"}}"""
+Return ONLY JSON: {{"hype": <0-100>, "cutscene": <true|false>, "payoff": "<what visibly happens, max 15 words>",
+"why": "<one sentence: why this score vs the reference moments>"}}"""
+
+
+def examples_text(path: Path = EXAMPLES) -> str:
+    try:
+        ex = tomllib.loads(path.read_text()).get("example", [])
+    except (OSError, tomllib.TOMLDecodeError):
+        ex = []
+    if not ex:
+        return "- 95: seaplane barrel rolls then crashes into palm trees, explodes, 'Wasted' (benchmark)"
+    return "\n".join(f"- {e['score']}: {e['what']}" for e in sorted(ex, key=lambda e: -e["score"]))
 
 
 def _duration(video: Path) -> float:
@@ -47,7 +62,7 @@ def _duration(video: Path) -> float:
                                           "-of", "csv=p=0", str(video)]).strip())
 
 
-def frames(video: Path, n: int = 8, width: int = 512) -> list[tuple[float, str]]:
+def frames(video: Path, n: int = 12, width: int = 640) -> list[tuple[float, str]]:
     """n evenly spaced JPEG frames as (time, base64)."""
     dur = _duration(video)
     out = []
@@ -77,7 +92,7 @@ def judge(video: Path, meta: dict | None = None, model: str | None = None) -> di
         raise SystemExit("OPENROUTER_API_KEY missing in .env")
     fr = frames(video)
     content: list[dict] = [{"type": "text", "text": RUBRIC.format(n=len(fr), dur=_duration(video),
-                                                                  chat=chat_lines(meta))}]
+                                                                  examples=examples_text(), chat=chat_lines(meta))}]
     for t, b64 in fr:
         content.append({"type": "text", "text": f"frame at {t}s"})
         content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
@@ -93,6 +108,8 @@ def judge(video: Path, meta: dict | None = None, model: str | None = None) -> di
             text = r.json()["choices"][0]["message"]["content"]
             out = json.loads(text[text.find("{"): text.rfind("}") + 1])
             out["hype"] = max(0, min(100, int(out["hype"])))
+            if out.get("cutscene") is True:  # enforce the rule even if the model forgets it
+                out["hype"] = min(out["hype"], 30)
             out["model"] = model
             return out
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as e:

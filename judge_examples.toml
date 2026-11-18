@@ -1,0 +1,26 @@
+# Hype examples the AI judge calibrates against (shown to it as reference points).
+# Add moments you'd post (and ones you wouldn't). score = what YOU think, 0-100. Highlight bar: 90.
+
+[[example]]
+score = 95
+by = "user (benchmark)"
+clip = "xQc, GTA 6 launch, VOD 2932113307 @ 8:04"
+what = "flies a seaplane, does barrel rolls over the coast, crashes into palm trees in a debris explosion, 'Wasted', stash impounded; chat floods LOL / o7 crash / lost everything"
+
+[[example]]
+score = 90
+by = "user"
+clip = "xQc, GTA 6 launch, VOD 2932113307 @ 7:50"
+what = "boat chase ends with the enemy boat exploding; he jumps into the water by the burning wreck to loot it while a shark circles him; chat: wtf the shark, shark o7"
+
+[[example]]
+score = 45
+by = "calibration"
+clip = "xQc gym"
+what = "workout minigame: punching bag, squats; chat spams GIGACHAD — loud but nothing happens"
+
+[[example]]
+score = 25
+by = "user rule"
+clip = "any story cutscene"
+what = "scripted cutscene / mission dialogue, even when funny — never a highlight (story spoilers, takedown risk)"
