@@ -94,3 +94,19 @@ def test_wave_trigger_in_capped_chat():
     ev = detect_offline(msgs, "x", DetectorConfig())
     assert len(ev) == 1 and ev[0].trigger == "wave" and ev[0].wave_token == "oooo"
     assert 180 <= ev[0].ts <= 190 and ev[0].wave_share >= 0.3
+
+
+def test_mixed_laughter_counts_as_one_wave():
+    """Half of chat laughing in different emotes (LOL / LMAO / KEKW / ICANT) is one laugh wave."""
+    import random
+    random.seed(2)
+    words = [f"word{i}" for i in range(200)]
+    laughs = ["LOL", "LMAO", "KEKW", "ICANT", "PepeLaugh", "lol lol"]
+    msgs = []
+    for s in range(240):
+        for k in range(10):
+            u = f"u{random.randrange(3000)}"
+            text = laughs[k % len(laughs)] if 180 <= s < 186 and k < 6 else " ".join(random.sample(words, 3))
+            msgs.append(ChatMessage(s + k / 10, u, text))
+    ev = detect_offline(msgs, "x", DetectorConfig())
+    assert len(ev) == 1 and ev[0].trigger == "wave" and ev[0].wave_token == "lol"

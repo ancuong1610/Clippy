@@ -21,6 +21,14 @@ DEFAULT_HYPE_TOKENS = {
 }
 _PHRASES = ("clip it", "clip that", "no way", "i cant", "i can't", "+2")
 _WORD_RE = re.compile(r"[\w+?💀😭😂]+", re.UNICODE)
+# Reactions spelled many ways count as ONE wave: half of chat laughing in 6 different emotes is still a laugh wave
+_FAMILIES = {
+    "lol": {"lol", "lo", "lool", "loool", "lmao", "lmfao", "kekw", "omegalul", "icant", "pepelaugh", "lul", "xd",
+            "kek", "lulw", "ahahah", "hahaha", "haha", "😂", "🤣", "😭", "💀"},
+    "o7": {"o7", "f", "rip", "ripbozo"},
+    "clip": {"clip", "clipit", "clipped", "clips"},
+}
+_FAMILY_OF = {w: fam for fam, words in _FAMILIES.items() for w in words}
 _STOP = {"the", "a", "an", "to", "is", "it", "he", "she", "you", "and", "of", "in", "on", "that", "this",
          "me", "my", "so", "for", "be", "was", "at", "just", "like", "what", "his", "her", "him", "we",
          "are", "not", "do", "no", "yes", "but", "if", "with", "has", "have", "they", "im", "u", "?"}
@@ -103,7 +111,8 @@ class SpikeDetector:
             self._start = msg.ts
         w, hits = message_weight(msg.text, self.cfg)
         self._win.append((msg.ts, msg.user, w, hits))
-        toks = frozenset(t for t in _WORD_RE.findall(msg.text.lower()) if len(t) >= 2 and t not in _STOP)
+        toks = frozenset(_FAMILY_OF.get(t, t) for t in _WORD_RE.findall(msg.text.lower())
+                         if (len(t) >= 2 or t in _FAMILY_OF) and t not in _STOP)
         self._wave.append((msg.ts, msg.user, toks))
 
     def _wave_score(self, now: float) -> tuple[float, str, int]:
