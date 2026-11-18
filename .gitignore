@@ -6,3 +6,4 @@ clips/
 *.pyc
 tools/
 samples/
+queue/

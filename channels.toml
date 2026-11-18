@@ -59,3 +59,16 @@ name = "stableronaldo"
 platform = "twitch"
 
 # Not supported yet (Kick chat): adinross, n3on
+
+# ---- Posting (Upload-Post: one call -> TikTok + YouTube Shorts + Instagram Reels) ----
+# Key goes in .env as UPLOAD_POST_API_KEY=...  (never here)
+[post]
+user = ""                               # your Upload-Post profile name (Upload-Post dashboard -> Profiles)
+platforms = ["tiktok", "youtube", "instagram"]
+queue_dir = "queue"
+description = "GTA 6 launch stream highlights"
+tags = ["GTA6", "GTA", "Shorts"]
+credit_template = "🎥 {streamer} — full stream on their channel"
+youtube_privacy = "public"
+# tiktok_privacy = "PUBLIC_TO_EVERYONE"
+# auto_approve_min_score = 70           # OFF by default: every post needs `clipfarm queue approve`

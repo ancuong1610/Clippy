@@ -63,9 +63,20 @@ Cloned at `../openshorts` (MIT, mutonby/openshorts). Its `.env` points the momen
 (`POST /api/process` takes a clip file). Status 2026-11-18: build blocked by Docker Desktop failing to pull
 base images (Docker Hub reachable from the Mac itself).
 
-## Money + auto-posting
-See design doc §4b–4c: campaigns (Whop etc.) pay from day one; YouTube/TikTok own-API posting is
-private-locked until each platform's audit, so launch uses an already-audited aggregator, with human approval.
+## Posting (TikTok + YouTube Shorts + Instagram Reels in one call)
+Via [Upload-Post](https://docs.upload-post.com/api/upload-video) (already audited by the platforms, so posts are public
+immediately). Put `UPLOAD_POST_API_KEY=...` in `.env` and your profile name in `[post] user` (channels.toml).
+```bash
+uv run clipfarm queue add clips/kaicenat/<x>_short_stack_hormozi.mp4 --title "Kai gets 5 stars in 10 seconds" \
+  --thumb clips/kaicenat/<x>_thumb_16x9_v1.jpg
+uv run clipfarm queue list
+uv run clipfarm queue approve <id>      # or: approve all / reject <id>
+uv run clipfarm post --dry-run          # shows exactly what would be sent
+uv run clipfarm post --gap 45           # schedule approved posts 45 min apart
+```
+Nothing posts unless approved. `auto_approve_min_score` (off) can skip approval for high-score clips once the
+style is locked. Every post carries a credit line + the streamer's tag. Duplicate-safe (Idempotency-Key).
+Money: see design doc §4b–4c (campaigns pay from day one; YouTube/TikTok direct APIs are private-locked until audit).
 
 ## Optional AI labels (OpenRouter)
 Create `.env` (git-ignored) with `OPENROUTER_API_KEY=...` and optionally `OPENROUTER_MODEL=...`.

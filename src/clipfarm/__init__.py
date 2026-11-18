@@ -198,7 +198,47 @@ def main() -> None:
     th.add_argument("--at", type=float, help="seconds into the clip to search around (default: audio peak)")
     th.add_argument("--variants", type=int, default=3)
     th.add_argument("--out", type=Path, default=None)
+    q = sub.add_parser("queue", help="posting queue: add / list / approve / reject")
+    q.add_argument("action", choices=["add", "list", "approve", "reject"])
+    q.add_argument("target", nargs="?", help="add: short .mp4 | approve/reject: item id or 'all'")
+    q.add_argument("--title", help="add: post title (<=100 chars)")
+    q.add_argument("--streamer", help="add: streamer name for credit + tag (default: from folder)")
+    q.add_argument("--thumb", type=Path, help="add: thumbnail JPG (YouTube)")
+    q.add_argument("--config", default="channels.toml", type=Path)
+    po = sub.add_parser("post", help="post everything in queue/approved via Upload-Post")
+    po.add_argument("--dry-run", action="store_true", help="show what would be sent, send nothing")
+    po.add_argument("--gap", type=float, default=0, help="schedule posts N minutes apart instead of now")
+    po.add_argument("--config", default="channels.toml", type=Path)
     args = ap.parse_args()
+    if args.cmd in ("queue", "post"):
+        from . import post as P
+        pcfg = load_config(args.config).get("post", {})
+        root = Path(pcfg.get("queue_dir", "queue"))
+        if args.cmd == "post":
+            for r in P.post_all(root, pcfg, args.dry_run, args.gap):
+                print(json.dumps(r, ensure_ascii=False, indent=2))
+            return
+        if args.action == "add":
+            if not (args.target and args.title):
+                raise SystemExit("queue add <short.mp4> --title '...' [--streamer x] [--thumb t.jpg]")
+            v = Path(args.target)
+            streamer = args.streamer or v.parent.name
+            meta = next((p for p in (v.with_suffix(".json"), v.parent / (v.stem.split("_short")[0] + ".json"))
+                         if p.exists()), None)
+            score = ((json.loads(meta.read_text()).get("score") or {}).get("total")) if meta else None
+            it = P.add(root, v, args.title, streamer, pcfg, args.thumb, score, str(v))
+            state = "approved" if (root / "approved" / it.id).exists() else "pending"
+            print(f"{state}: {it.id}  {it.title}  -> {', '.join(it.platforms)}")
+        elif args.action == "list":
+            for st in P.STATES:
+                for _, it in P.items(root, st):
+                    print(f"{st:9} {it.id}  s{it.score if it.score is not None else '-':>3}  {it.streamer:12} {it.title}")
+        else:
+            ids = [it.id for _, it in P.items(root, "pending")] if args.target == "all" else [args.target]
+            for i in ids:
+                P.move(root, i, "pending", "approved" if args.action == "approve" else "failed")
+                print(f"{args.action}d {i}")
+        return
     if args.cmd == "thumb":
         from .thumb import ThumbSpec, make_thumbnails
         fc = tuple(float(x) for x in args.facecam.split(",")) if args.facecam else None
