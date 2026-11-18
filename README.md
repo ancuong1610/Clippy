@@ -26,6 +26,12 @@ uv run clipfarm analyze chat.json --vod https://www.twitch.tv/videos/<id> --top 
 ```
 Only the spike sections are downloaded (yt-dlp `--download-sections`), not the whole VOD.
 
+## Approved style (locked 2026-11-18)
+`uv run clipfarm make <raw clip> --streamer <name> --context "GTA 6 livestream"` produces it:
+facecam auto-detected → `stack` layout (face top, content below), AI hook banner on top (`*payoff*` in yellow),
+`karaoke` captions (2 words, green active word) with AI spelling fixes, trimmed to the 15–30 s payoff window,
+16:9 thumbnails. Reference: [samples/approved-style/xqc_style_v1.mp4](samples/approved-style/xqc_style_v1.mp4).
+
 ## Moment score (0–100)
 Every clip gets a score = **chat** (max 60: spike ratio vs normal + share of hype messages) +
 **audio** (max 40: loudest moment near the spike vs the clip's normal loudness — screams, explosions).
