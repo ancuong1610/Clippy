@@ -125,9 +125,9 @@ class Channel:
         # 1) cheap gate: chat + audio signal. 2) AI judge watches the clip: its hype (0-100) decides.
         hype, verdict = None, None
         if video and self.judge_on and ms.total >= self.min_score:
-            from .judge import judge
+            from .judge import final_score, judge
             try:
-                verdict = await asyncio.to_thread(judge, video, {"chat_timed": chat_timed})
+                verdict = final_score(await asyncio.to_thread(judge, video, {"chat_timed": chat_timed}), chat_timed)
                 hype = verdict["hype"]
             except Exception as e:  # noqa: BLE001 — judge down: keep the clip, never auto-post it
                 log.warning("[%s] judge failed (%s): clip kept, not auto-posted", self.name, e)
@@ -137,7 +137,8 @@ class Channel:
             video.unlink(missing_ok=True)
             with (self.out_dir.parent / "events.jsonl").open("a") as f:
                 f.write(json.dumps({**record, "video": None, "dropped": True}, ensure_ascii=False) + "\n")
-            why = f"hype {hype} < {self.min_hype}: {verdict['payoff']}" if hype is not None else \
+            why = (f"hype {hype} = {verdict['visual']} visual + {verdict['bonus']:.0f} chat '{verdict['mood']}' "
+                   f"{verdict['unison']:.0%} < {self.min_hype}: {verdict['payoff']}") if hype is not None else \
                 f"signal {ms.total} < {self.min_score}"
             log.info("[%s] · dropped (%s)", self.name, why)
             return
@@ -152,7 +153,8 @@ class Channel:
         with (self.out_dir.parent / "events.jsonl").open("a") as f:
             f.write(json.dumps({**record, "video": meta["video"]}, ensure_ascii=False) + "\n")
         log.info("[%s] ✂️  %sscore %d (chat %.0f + audio %.0f) %s%s", self.name,
-                 f"HYPE {hype} · " if hype is not None else "", ms.total, ms.chat, ms.audio,
+                 (f"HYPE {hype} ({verdict['visual']} visual + {verdict['bonus']:.0f} chat '{verdict['mood']}' "
+                  f"{verdict['unison']:.0%}) · ") if hype is not None else "", ms.total, ms.chat, ms.audio,
                  video or "(no video buffered)", f"  — {verdict['payoff']}" if verdict else "")
         if video and self.autoposter and (hype is not None or not self.judge_on):
             self.autoposter.submit(video, self.name, hype if hype is not None else ms.total)

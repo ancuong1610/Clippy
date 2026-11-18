@@ -79,7 +79,8 @@ uv run clipfarm post
 **What counts as a highlight.** Chat waves (laughter, o7, emote floods) and chat speed only nominate moments. An AI
 judge then looks at 12 frames plus the chat and rates the clip 0–100 against reference moments in
 [judge_examples.toml](judge_examples.toml): xQc's GTA 6 seaplane crash = 95, the shark scene = 90, gym and
-menus ≈ 45. Story cutscenes are capped at 30. Add your own picks to that file to teach it; the bar is
+menus ≈ 45. On top of what it sees, a clip gets up to **+15** when chat answers as one (35–60 % of chatters
+in the same mood: laughing, shock, hype, RIP, cringe). Story cutscenes are capped at 30 and get no chat bonus. Add your own picks to that file to teach it; the bar is
 `[judge] min_hype = 90`.
 
 **Auto-post (live run only).** With `auto_post_min_score = 70` in `[post]`, `clipfarm run` edits every highlight

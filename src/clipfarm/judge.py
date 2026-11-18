@@ -12,9 +12,8 @@ import base64
 import json
 import os
 import subprocess
-from pathlib import Path
-
 import tomllib
+from pathlib import Path
 
 import httpx
 
@@ -82,6 +81,16 @@ def chat_lines(meta: dict, limit: int = 80) -> str:
         return "\n".join((meta.get("chat") or [])[-limit:]) or "(no chat)"
     step = max(1, len(timed) // limit)  # even sample across the clip, keeps the reaction shape
     return "\n".join(f"[{m['t']:.0f}] {m['user']}: {m['text'][:80]}" for m in timed[::step][:limit])
+
+
+def final_score(verdict: dict, chat_timed: list[dict]) -> dict:
+    """Owner's rule: a hype moment is also chat spiking AND answering in one mood. Judge (what's on screen)
+    + up to +15 for chat unison. Cutscenes stay capped: chat can't push a cutscene over the bar."""
+    from .detector import mood_peak, unison_bonus
+    share, mood = mood_peak(chat_timed)
+    bonus = 0.0 if verdict.get("cutscene") else unison_bonus(share)
+    return {**verdict, "visual": verdict["hype"], "unison": share, "mood": mood, "bonus": bonus,
+            "hype": int(min(100, round(verdict["hype"] + bonus)))}
 
 
 def judge(video: Path, meta: dict | None = None, model: str | None = None) -> dict:

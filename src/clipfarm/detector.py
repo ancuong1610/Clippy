@@ -22,10 +22,15 @@ DEFAULT_HYPE_TOKENS = {
 _PHRASES = ("clip it", "clip that", "no way", "i cant", "i can't", "+2")
 _WORD_RE = re.compile(r"[\w+?💀😭😂]+", re.UNICODE)
 # Reactions spelled many ways count as ONE wave: half of chat laughing in 6 different emotes is still a laugh wave
-_FAMILIES = {
+_FAMILIES = {  # chat "moods": one reaction, many spellings
     "lol": {"lol", "lo", "lool", "loool", "lmao", "lmfao", "kekw", "omegalul", "icant", "pepelaugh", "lul", "xd",
             "kek", "lulw", "ahahah", "hahaha", "haha", "😂", "🤣", "😭", "💀"},
-    "o7": {"o7", "f", "rip", "ripbozo"},
+    "shock": {"wtf", "huh", "???", "monkas", "monka", "omg", "noway", "holy", "nahh", "d:",
+              "omfg", "😱", "😳"},
+    "hype": {"pog", "poggers", "pogu", "pogchamp", "letsgo", "w", "ez", "gigachad", "oooo", "ooooo", "pagman",
+             "wicked", "insane", "clean", "goat", "🔥"},
+    "o7": {"o7", "f", "rip", "ripbozo", "l", "gg"},
+    "cringe": {"eww", "ew", "cringe", "weirdchamp", "yikes"},
     "clip": {"clip", "clipit", "clipped", "clips"},
 }
 _FAMILY_OF = {w: fam for fam, words in _FAMILIES.items() for w in words}
@@ -55,6 +60,42 @@ class HypeEvent:
     trigger: str = "volume"  # or "wave"
     wave_token: str = ""
     wave_share: float = 0.0
+
+
+def tokens(text: str) -> frozenset[str]:
+    """Distinct tokens of a message, with emote spellings folded into their mood ('KEKW' -> 'lol')."""
+    return frozenset(_FAMILY_OF.get(t, t) for t in _WORD_RE.findall(text.lower())
+                     if (len(t) >= 2 or t in _FAMILY_OF) and t not in _STOP)
+
+
+MOODS = set(_FAMILIES) - {"clip"}
+
+
+def mood_peak(chat_timed: list[dict], window: float = 10.0, min_users: int = 20) -> tuple[float, str]:
+    """Strongest moment where chat answers in one mood: (share of chatters, mood) over any `window` seconds."""
+    msgs = sorted(chat_timed, key=lambda m: m["t"])
+    best, mood = 0.0, ""
+    j = 0
+    for i in range(len(msgs)):
+        while msgs[j]["t"] < msgs[i]["t"] - window:
+            j += 1
+        win = msgs[j:i + 1]
+        users = {m["user"] for m in win}
+        if len(users) < min_users:
+            continue
+        by: dict[str, set[str]] = {}
+        for m in win:
+            for t in tokens(m["text"]) & MOODS:
+                by.setdefault(t, set()).add(m["user"])
+        for t, us in by.items():
+            if len(us) / len(users) > best:
+                best, mood = len(us) / len(users), t
+    return round(best, 2), mood
+
+
+def unison_bonus(share: float, lo: float = 0.35, hi: float = 0.60, max_pts: float = 15.0) -> float:
+    """Chat answering as one (35 % -> 0 … 60 %+ of chatters in one mood -> +15)."""
+    return round(min(max((share - lo) / (hi - lo), 0.0), 1.0) * max_pts, 1)
 
 
 @dataclass
@@ -111,9 +152,7 @@ class SpikeDetector:
             self._start = msg.ts
         w, hits = message_weight(msg.text, self.cfg)
         self._win.append((msg.ts, msg.user, w, hits))
-        toks = frozenset(_FAMILY_OF.get(t, t) for t in _WORD_RE.findall(msg.text.lower())
-                         if (len(t) >= 2 or t in _FAMILY_OF) and t not in _STOP)
-        self._wave.append((msg.ts, msg.user, toks))
+        self._wave.append((msg.ts, msg.user, tokens(msg.text)))
 
     def _wave_score(self, now: float) -> tuple[float, str, int]:
         """Largest share of distinct chatters who used the same token in the wave window."""

@@ -92,7 +92,7 @@ def test_wave_trigger_in_capped_chat():
             text = "OOOO OOOO" if 180 <= s < 186 and k < 6 else " ".join(random.sample(words, 3))
             msgs.append(ChatMessage(s + k / 10, u, text))
     ev = detect_offline(msgs, "x", DetectorConfig())
-    assert len(ev) == 1 and ev[0].trigger == "wave" and ev[0].wave_token == "oooo"
+    assert len(ev) == 1 and ev[0].trigger == "wave" and ev[0].wave_token == "hype"  # OOOO belongs to the hype mood
     assert 180 <= ev[0].ts <= 190 and ev[0].wave_share >= 0.3
 
 
@@ -110,3 +110,20 @@ def test_mixed_laughter_counts_as_one_wave():
             msgs.append(ChatMessage(s + k / 10, u, text))
     ev = detect_offline(msgs, "x", DetectorConfig())
     assert len(ev) == 1 and ev[0].trigger == "wave" and ev[0].wave_token == "lol"
+
+
+def test_mood_peak_and_unison_bonus():
+    from clipfarm.detector import mood_peak, unison_bonus
+    chat = [{"t": i * 0.2, "user": f"u{i}", "text": ["KEKW", "LMAO", "ICANT LOL"][i % 3] if i % 10 < 7 else f"word{i}"}
+            for i in range(50)]
+    share, mood = mood_peak(chat)
+    assert mood == "lol" and 0.65 <= share <= 0.75
+    assert unison_bonus(0.30) == 0 and unison_bonus(0.60) == 15 and 0 < unison_bonus(0.5) < 15
+    assert mood_peak([{"t": 0, "user": "a", "text": "LOL"}]) == (0.0, "")  # too few chatters
+
+
+def test_cutscene_gets_no_chat_bonus():
+    from clipfarm.judge import final_score
+    chat = [{"t": i * 0.2, "user": f"u{i}", "text": "KEKW"} for i in range(40)]
+    assert final_score({"hype": 80, "cutscene": False}, chat)["hype"] == 95
+    assert final_score({"hype": 25, "cutscene": True}, chat)["hype"] == 25
