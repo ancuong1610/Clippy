@@ -84,6 +84,31 @@ Now a general "AI video studio" (Seedance/Kling/Veo generation, MCP for Claude, 
 3. **Spam policy**: mass-uploading near-identical clips across many channels → channel termination risk. Keep a human approval gate and quality bar.
 4. Twitch side: reading chat + watching stream is fine; don't bot-spam clip creation (global rate limit on Create Clip).
 
+## 4b. Where the money is (researched 2026-11-18, operator in Germany)
+
+Figures are mostly from third-party guides, not official docs — verify in each platform's dashboard.
+
+| Source | Eligibility | Pays | Fit for streamer clips |
+|---|---|---|---|
+| **Clipping campaigns** (Whop Content Rewards, streamer programs) | none — join a funded campaign | ~$0.20–6 / 1k approved views (~$1 typical), 10% fee, payout holds reported; views on *any* platform count | **Best, from day 1.** Authorized → no copyright/reuse fight. GTA 6 campaigns already exist (e.g. $0.70/1k, $35 cap/clip) |
+| **YouTube Shorts** (YPP) | 1k subs + 10M Shorts views / 90 days | ~$0.03–0.10 RPM (45% of pool) | Medium: needs scale; reused-content review is the main rejection reason → edits must add value |
+| **YouTube long-form compilations** | 1k subs + 4k watch hours / 12 mo | gaming RPM far higher than Shorts | Good later: "Kai Cenat GTA 6 funniest moments" (thumbnail tool targets this) |
+| **TikTok Creator Rewards** | DE eligible; 10k followers, 100k views / 30 days, 18+, personal account | ~$0.40–1.00 RPM (unverified), only videos ≥ 1 min, originality rules | Good once eligible: needs ≥60 s edits (use `length = "30-60"` + combine 2 moments) |
+| **Instagram Reels** | bonus programs invite-only / mostly closed | n/a broadly | Audience + brand deals, not direct payout |
+
+**Plan:** launch week → post authorized campaign clips to TikTok + Shorts + Reels (campaign pay, audience growth) → grow YouTube to YPP, add long-form compilations → TikTok ≥1 min edits once 10k followers.
+
+## 4c. Auto-posting (researched 2026-11-18)
+
+| Route | Public posting? | Limits | Cost |
+|---|---|---|---|
+| YouTube Data API, own Google Cloud app | **Private-locked until API audit** (2–4+ weeks) | quota cost per upload disputed (~1,600 or ~100 units of 10k/day) + per-channel daily cap | free |
+| TikTok Content Posting API, own app | **Private (SELF_ONLY) until audit** (2–6 weeks), separate from app review | ~15 posts/day/creator | free |
+| Instagram Graph API | yes, Business/Creator account linked to a FB Page | 50 posts / 24 h | free |
+| **Upload-Post** (already-audited aggregator; OpenShorts integrates it) | yes, all three | Free: 10 uploads/mo, no TikTok · Basic: unlimited incl. TikTok | $0 / ~$24 mo |
+
+**Decision:** use an aggregator (Upload-Post Basic) for launch so posts are public immediately; optionally file our own YouTube API audit in parallel for a free long-term path. Every post goes through a **human approval queue** (`approved/` folder or CLI confirm) — mass auto-posting near-identical clips risks spam/reused-content strikes, and posting is an outward action we keep gated.
+
 ## 5. MVP for tomorrow (GTA 6 launch)
 
 1. Tonight: one Python service — 3 channels × (streamlink buffer + IRC chat) + detector + ffmpeg cutter → `clips/<channel>/<time>_<score>.mp4` + `events.jsonl` (chat context).

@@ -56,6 +56,17 @@ Big face sticker from the facecam + saturated action frame (framed away from cha
 (`*word*` = yellow). Defaults to the clip's audio peak. Claude skill with the rules (MrBeast / GTA clip patterns,
 YouTube thumbnail policy): [.claude/skills/youtube-thumbnail](.claude/skills/youtube-thumbnail/SKILL.md).
 
+## OpenShorts (optional AI editor, self-hosted)
+Cloned at `../openshorts` (MIT, mutonby/openshorts). Its `.env` points the moment picker at OpenRouter
+(`LLM_BASE_URL=https://openrouter.ai/api/v1`); paste your own key into `LLM_API_KEY=` there. Start with
+`docker compose up -d --build` in that folder → dashboard http://localhost:5175, API http://localhost:8000
+(`POST /api/process` takes a clip file). Status 2026-11-18: build blocked by Docker Desktop failing to pull
+base images (Docker Hub reachable from the Mac itself).
+
+## Money + auto-posting
+See design doc §4b–4c: campaigns (Whop etc.) pay from day one; YouTube/TikTok own-API posting is
+private-locked until each platform's audit, so launch uses an already-audited aggregator, with human approval.
+
 ## Optional AI labels (OpenRouter)
 Create `.env` (git-ignored) with `OPENROUTER_API_KEY=...` and optionally `OPENROUTER_MODEL=...`.
 Each clip's JSON then gets `what_happened`, `title`, `keep_score` (0–10) inferred from chat.
