@@ -42,6 +42,8 @@ Rules:
   "harassment" (targeting a real person), "minor" (a child on screen), "unclear" (nothing happens / can't tell),
   "off_topic" (the clip is not about {context}).
   In-game GTA violence is fine. [] if none.
+- lyric_spans: [[start, end], ...] seconds (transcript timestamps) where the transcript is SONG LYRICS (sung or
+  rapped music, radio songs), so they are never shown as captions. [] if none. Speech is never lyrics.
 - caption_fixes: speech-to-text mistakes in names/terms (streamers, games, slang) as [wrong, right] single
   words, e.g. [["fortnight","Fortnite"],["Automator","Automata"]]. Only clear mistakes; [] if none.
 
@@ -57,6 +59,7 @@ Return ONLY JSON:
   "best_end": <seconds>,
   "caption_fixes": [["wrong", "right"]],
   "autopost_risks": [],
+  "lyric_spans": [],
   "chat_highlights": ["user: message"]
 }}"""
 
@@ -84,6 +87,12 @@ def timestamped(words: list[dict], every: float = 3.0) -> str:
             last = w["start"]
         out.append(w["text"])
     return " ".join(out)
+
+
+def drop_lyrics(words: list[dict], spans) -> list[dict]:
+    """Owner's rule: music in a clip is fine, but song lyrics are never captioned."""
+    spans = spans or []
+    return [w for w in words if not any(a - 0.2 <= w["start"] <= b + 0.2 for a, b in spans)]
 
 
 def apply_fixes(words: list[dict], fixes) -> list[dict]:
@@ -131,6 +140,10 @@ def validate(t: dict) -> dict:
     risks = t.get("autopost_risks")
     # missing/garbled answer counts as a risk: unattended posting must fail closed
     t["autopost_risks"] = [str(r) for r in risks] if isinstance(risks, list) else ["unchecked"]
+    spans = t.get("lyric_spans")
+    t["lyric_spans"] = [[float(a), float(b)] for a, b in spans
+                        if isinstance(a, (int, float)) and isinstance(b, (int, float)) and b > a] \
+        if isinstance(spans, list) and all(isinstance(x, (list, tuple)) and len(x) == 2 for x in spans) else []
     return t
 
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from collections import deque
 from pathlib import Path
@@ -27,6 +28,17 @@ log = logging.getLogger("clipfarm")
 def is_upload_limit(error) -> bool:
     e = str(error or "").lower()
     return "upload limit" in e or "exceeded the number of videos" in e or "uploadlimitexceeded" in e
+
+
+_STAMP = re.compile(r"(\d{8}-\d{6})")
+
+
+def moment_ts(item) -> float | None:
+    """When the moment happened (live clips are named <YYYYmmdd-HHMMSS>_...)."""
+    m = _STAMP.search(Path(item.source_clip or "").name)
+    if not m:
+        return None
+    return time.mktime(time.strptime(m.group(1), "%Y%m%d-%H%M%S"))
 
 
 def recent_posts(root: Path, within_s: float = 86400) -> list[float]:
@@ -47,6 +59,7 @@ class AutoPoster:
         self.max_per_hour = int(self.pcfg.get("auto_post_max_per_hour", 3))
         self.max_per_day = int(self.pcfg.get("auto_post_max_per_day", 12))
         self.min_gap_s = float(self.pcfg.get("auto_post_min_gap_min", 20)) * 60
+        self.scene_s = float(self.pcfg.get("auto_post_scene_min", 3)) * 60  # one clip per scene
         self.context = self.pcfg.get("context", "GTA 6 livestream")
         self.root = Path(self.pcfg.get("queue_dir", "queue"))
         self.lock = asyncio.Lock()
@@ -98,8 +111,11 @@ class AutoPoster:
     def decide(self, titles: dict) -> str | None:
         """None = safe to post unattended; otherwise the reason it goes to human review."""
         risks = titles.get("autopost_risks")
-        if risks is None or risks:
-            return f"risk flagged: {', '.join(risks or ['unchecked'])}"
+        if risks is None:
+            return "risk flagged: unchecked"
+        risks = [r for r in risks if r != "music"]  # owner: music is fine (lyrics are never captioned)
+        if risks:
+            return f"risk flagged: {', '.join(risks)}"
         return None
 
     def _upload(self, item_id: str, streamer: str, title: str) -> dict:
@@ -120,10 +136,35 @@ class AutoPoster:
         log.error("[%s] upload failed (%s) — item in queue/failed/%s", streamer, yt.get("error"), item_id)
         return {"posted": False, "error": yt.get("error")}
 
+    def dedupe_scenes(self) -> list[str]:
+        """One clip per scene: highlights of the same streamer within `scene_s` of each other (a long funny scene
+        makes chat spike again and again) -> keep the best, move the rest to queue/skipped/. A scene that was
+        already posted is never posted again."""
+        posted = [it for _, it in P.items(self.root, "posted")]
+        waiting = sorted((it for _, it in P.items(self.root, "approved")),
+                         key=lambda it: (-(it.score or 0), it.created))
+        kept, skipped = [], []
+
+        def same_scene(a, b) -> bool:
+            ta, tb = moment_ts(a), moment_ts(b)
+            return a.streamer == b.streamer and ta is not None and tb is not None and abs(ta - tb) <= self.scene_s
+
+        for it in waiting:
+            other = next((o for o in posted + kept if same_scene(it, o)), None)
+            if other:
+                P.move(self.root, it.id, "approved", "skipped")
+                skipped.append(it.id)
+                log.info("[%s] ⤼ skipped (same scene as %s, hype %s): %s", it.streamer, other.id, other.score,
+                         it.title)
+            else:
+                kept.append(it)
+        return skipped
+
     def post_next(self, now: float | None = None) -> dict | None:
         """Upload the single best waiting highlight if the spacing/caps allow it right now."""
         if self.wait_reason(now):
             return None
+        self.dedupe_scenes()
         waiting = sorted(P.items(self.root, "approved"), key=lambda x: (-(x[1].score or 0), x[1].created))
         if not waiting:
             return None

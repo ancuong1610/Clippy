@@ -87,4 +87,5 @@ context = "GTA 6 launch stream"         # tells the AI what the stream is about 
 auto_post_min_score = 90            # = judge hype (0-100) when [judge] is on
 auto_post_max_per_hour = 3
 auto_post_min_gap_min = 20              # rolling: one upload at a time, best waiting highlight first
+auto_post_scene_min = 3                 # one clip per scene: same streamer within 3 min -> only the best
 auto_post_max_per_day = 12              # rolling 24 h incl. manual uploads; YouTube's own limit is unpublished

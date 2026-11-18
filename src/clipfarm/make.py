@@ -15,7 +15,7 @@ from pathlib import Path
 from .edit import Word, make_short, transcribe
 from .face import detect_facecam
 from .thumb import ThumbSpec, make_thumbnails
-from .titles import apply_fixes, make_titles
+from .titles import apply_fixes, drop_lyrics, make_titles
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ def make(clip: Path, streamer: str | None = None, context: str = "GTA 6 livestre
     words = json.loads(words_f.read_text())
 
     t = make_titles(clip, streamer, context)                      # titles, hook, window, fixes
-    fixed = apply_fixes(words, t.get("caption_fixes"))
+    fixed = drop_lyrics(apply_fixes(words, t.get("caption_fixes")), t.get("lyric_spans"))
     start, end = t["window"]
     stem = clip.stem
     trimmed = trim(clip, start, end, out_dir / f"{stem}_cut.mp4")

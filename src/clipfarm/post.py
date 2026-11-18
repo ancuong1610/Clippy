@@ -21,7 +21,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-STATES = ("pending", "approved", "posted", "failed")
+STATES = ("pending", "approved", "posted", "failed", "skipped")  # skipped: same scene as a better clip
 
 
 @dataclass

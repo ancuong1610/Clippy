@@ -11,7 +11,7 @@ def test_disabled_without_threshold():
 def test_risks_block_autopost():
     ap = AutoPoster(CFG)
     assert ap.decide({"autopost_risks": []}) is None
-    assert "music" in ap.decide({"autopost_risks": ["music"]})
+    assert "hate" in ap.decide({"autopost_risks": ["hate"]})  # music alone no longer blocks (owner)
     assert "unchecked" in ap.decide({})  # no AI check -> human review
 
 
@@ -84,3 +84,38 @@ def test_rolling_poster_posts_best_first_one_at_a_time(tmp_path, monkeypatch):
     now[0] += 21 * 60
     assert ap.post_next(now[0]) is None and sent == ["clip 99", "clip 95"]  # paused: nothing
 
+
+
+def test_music_allowed_but_lyrics_never_captioned():
+    from clipfarm.titles import drop_lyrics, validate
+    ap = AutoPoster(CFG)
+    assert ap.decide({"autopost_risks": ["music"]}) is None
+    assert "sexual" in ap.decide({"autopost_risks": ["music", "sexual"]})
+    words = [{"start": 1.0, "end": 1.4, "text": "yo"}, {"start": 5.0, "end": 5.4, "text": "unwritten"},
+             {"start": 9.0, "end": 9.3, "text": "bro"}]
+    assert [w["text"] for w in drop_lyrics(words, [[4.0, 6.0]])] == ["yo", "bro"]
+    t = validate({"youtube_titles": ["x"], "thumbnail_text": "A *B*", "lyric_spans": [[4, 6], ["x", 1], [9, 8]]})
+    assert t["lyric_spans"] == [[4.0, 6.0]]
+
+
+def test_one_clip_per_scene(tmp_path):
+    from clipfarm import post as P
+    root = tmp_path / "q"
+    ap = AutoPoster({"post": {"auto_post_min_score": 90, "auto_post_scene_min": 3, "queue_dir": str(root)}})
+    v = tmp_path / "s.mp4"
+    ids = {}
+    for stamp, streamer, sc in [("20261118-181600", "xqc", 90), ("20261118-181650", "xqc", 97),
+                                ("20261118-181746", "xqc", 97), ("20261118-180921", "xqc", 100),
+                                ("20261118-181700", "kaicenat", 91)]:
+        v.write_bytes(f"{stamp}{streamer}".encode())
+        it = P.add(root, v, f"{streamer} {stamp}", streamer, {}, score=sc,
+                   source_clip=f"clips/{streamer}/{stamp}_s50_h{sc}.mp4")
+        P.move(root, it.id, "pending", "approved")
+        ids[stamp + streamer] = it.id
+    skipped = ap.dedupe_scenes()
+    left = {it.title for _, it in P.items(root, "approved")}
+    # bank scene (3 xQc clips within 2.5 min) -> one 97 kept; the carjack (7 min earlier) and Kai stay
+    assert len(skipped) == 2 and "xqc 20261118-180921" in left and "kaicenat 20261118-181700" in left
+    bank = {"xqc 20261118-181600", "xqc 20261118-181650", "xqc 20261118-181746"}
+    assert len(left & bank) == 1
+    assert "xqc 20261118-181600" not in left  # the 90 lost to the 97s
