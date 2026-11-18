@@ -71,6 +71,7 @@ class Channel:
         clip = cfg["clip"]
         self.pre, self.post = clip_window(clip)
         self.min_score = clip.get("min_score", 35)
+        self.keep_low = clip.get("keep_low", True)  # false: delete clips below min_score (disk + noise)
         self.av_offset = clip.get("chat_video_offset_s", 0.0)  # +: video arrives later than chat
         self.segment_s = clip.get("segment_s", 10)
         self.out_dir = out_dir / self.name
@@ -121,6 +122,13 @@ class Channel:
         sub = self.out_dir if ms.total >= self.min_score else self.out_dir / "low"
         base = sub / f"{stamp}_s{ms.total:02d}"
         base.parent.mkdir(parents=True, exist_ok=True)
+        if video and ms.total < self.min_score and not self.keep_low:
+            video.unlink(missing_ok=True)
+            with (self.out_dir.parent / "events.jsonl").open("a") as f:
+                f.write(json.dumps({"event": asdict(ev), "score": ms.as_dict(), "video": None, "dropped": True},
+                                   ensure_ascii=False) + "\n")
+            log.info("[%s] · score %d < %d: dropped", self.name, ms.total, self.min_score)
+            return
         if video:
             video = video.rename(base.with_suffix(".mp4"))
         meta = {"event": asdict(ev), "score": ms.as_dict(), "video": str(video) if video else None,
