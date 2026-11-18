@@ -73,7 +73,7 @@ def make(clip: Path, streamer: str | None = None, context: str = "GTA 6 livestre
     chosen = "stack" if box else ("blur" if layout in ("auto", "stack") else layout)
 
     meta_raw = json.loads(clip.with_suffix(".json").read_text()) if clip.with_suffix(".json").exists() else {}
-    score = (meta_raw.get("score") or {}).get("total") or 0
+    score = (meta_raw.get("judge") or {}).get("hype") or (meta_raw.get("score") or {}).get("total") or 0
     use_chat = chat == "on" or (chat == "auto" and score >= chat_min_score)
     events = chat_events_for(meta_raw, t, start, end) if use_chat else []
 

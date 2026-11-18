@@ -71,7 +71,10 @@ class Channel:
         clip = cfg["clip"]
         self.pre, self.post = clip_window(clip)
         self.min_score = clip.get("min_score", 35)
-        self.keep_low = clip.get("keep_low", True)  # false: delete clips below min_score (disk + noise)
+        self.keep_low = clip.get("keep_low", True)  # false: delete clips below the bar (disk + noise)
+        jcfg = cfg.get("judge", {})
+        self.judge_on = jcfg.get("enabled", False)  # AI looks at the clip; its 0-100 hype is the real score
+        self.min_hype = jcfg.get("min_hype", 90)
         self.av_offset = clip.get("chat_video_offset_s", 0.0)  # +: video arrives later than chat
         self.segment_s = clip.get("segment_s", 10)
         self.out_dir = out_dir / self.name
@@ -119,27 +122,40 @@ class Channel:
         video = await cut(self.rec.segments(), t0, t1, tmp, self.segment_s)
         ms = await asyncio.to_thread(moment_score, video, ev.ratio, ev.msgs, ev.hype_msgs,
                                      (max(0.0, self.pre - 25), self.pre + self.post), ev.wave_share)
-        sub = self.out_dir if ms.total >= self.min_score else self.out_dir / "low"
-        base = sub / f"{stamp}_s{ms.total:02d}"
-        base.parent.mkdir(parents=True, exist_ok=True)
-        if video and ms.total < self.min_score and not self.keep_low:
+        # 1) cheap gate: chat + audio signal. 2) AI judge watches the clip: its hype (0-100) decides.
+        hype, verdict = None, None
+        if video and self.judge_on and ms.total >= self.min_score:
+            from .judge import judge
+            try:
+                verdict = await asyncio.to_thread(judge, video, {"chat_timed": chat_timed})
+                hype = verdict["hype"]
+            except Exception as e:  # noqa: BLE001 — judge down: keep the clip, never auto-post it
+                log.warning("[%s] judge failed (%s): clip kept, not auto-posted", self.name, e)
+        keep = ms.total >= self.min_score and (hype is None or hype >= self.min_hype)
+        record = {"event": asdict(ev), "score": ms.as_dict(), "judge": verdict}
+        if video and not keep and not self.keep_low:
             video.unlink(missing_ok=True)
             with (self.out_dir.parent / "events.jsonl").open("a") as f:
-                f.write(json.dumps({"event": asdict(ev), "score": ms.as_dict(), "video": None, "dropped": True},
-                                   ensure_ascii=False) + "\n")
-            log.info("[%s] · score %d < %d: dropped", self.name, ms.total, self.min_score)
+                f.write(json.dumps({**record, "video": None, "dropped": True}, ensure_ascii=False) + "\n")
+            why = f"hype {hype} < {self.min_hype}: {verdict['payoff']}" if hype is not None else \
+                f"signal {ms.total} < {self.min_score}"
+            log.info("[%s] · dropped (%s)", self.name, why)
             return
+        sub = self.out_dir if keep else self.out_dir / "low"
+        base = sub / (f"{stamp}_s{ms.total:02d}" + (f"_h{hype:02d}" if hype is not None else ""))
+        base.parent.mkdir(parents=True, exist_ok=True)
         if video:
             video = video.rename(base.with_suffix(".mp4"))
-        meta = {"event": asdict(ev), "score": ms.as_dict(), "video": str(video) if video else None,
+        meta = {"event": asdict(ev), "score": ms.as_dict(), "judge": verdict, "video": str(video) if video else None,
                 "window": [t0, t1], "spike_at": round(ev.ts - t0, 2), "chat": chat, "chat_timed": chat_timed}
         base.with_suffix(".json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
         with (self.out_dir.parent / "events.jsonl").open("a") as f:
-            f.write(json.dumps({k: meta[k] for k in ("event", "score", "video")}, ensure_ascii=False) + "\n")
-        log.info("[%s] ✂️  score %d (chat %.0f + audio %.0f) %s", self.name, ms.total, ms.chat, ms.audio,
-                 video or "(no video buffered)")
-        if video and self.autoposter:
-            self.autoposter.submit(video, self.name, ms.total)
+            f.write(json.dumps({**record, "video": meta["video"]}, ensure_ascii=False) + "\n")
+        log.info("[%s] ✂️  %sscore %d (chat %.0f + audio %.0f) %s%s", self.name,
+                 f"HYPE {hype} · " if hype is not None else "", ms.total, ms.chat, ms.audio,
+                 video or "(no video buffered)", f"  — {verdict['payoff']}" if verdict else "")
+        if video and self.autoposter and (hype is not None or not self.judge_on):
+            self.autoposter.submit(video, self.name, hype if hype is not None else ms.total)
 
 
 async def run(cfg: dict, test_trigger: float | None):

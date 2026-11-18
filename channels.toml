@@ -6,12 +6,16 @@ buffer_dir = "buffer"    # rolling 10s segments, auto-deleted after buffer_minut
 length = "auto"          # auto = 30s before + 8s after spike | "15-30" (20+6) | "30-60" (40+12)
 # pre_s = 30             # optional explicit override of the preset
 # post_s = 8
-min_score = 60           # moment score 0-100 (chat 60 + audio 40); GTA 6 launch: keep highlights only
-keep_low = false         # false: clips below min_score are deleted (score still logged in clips/events.jsonl)
+min_score = 35           # signal gate (chat 60 + audio 40): only these get sent to the AI judge
+keep_low = false         # false: clips that don't make the bar are deleted (scores logged in clips/events.jsonl)
 segment_s = 10
 buffer_minutes = 15
 quality = "720p60,720p,best"  # 720p keeps 10 streams under ~45 Mbps; Shorts are 1080x1920 anyway
 chat_video_offset_s = 0  # +N if our video arrives N s later than chat (tune after first clips)
+
+[judge]                  # AI watches each candidate (frames + chat) and rates it 0-100
+enabled = true           # benchmark: xQc's GTA 6 seaplane crash = 95; gym/menus/NPC talk ~ 45
+min_hype = 90            # highlight bar: below this a clip is dropped
 
 [detector]               # defaults shown; can be overridden per channel with [channel.detector]
 ratio = 3.0              # chat must be >= 3x its own normal
@@ -79,5 +83,5 @@ context = "GTA 6 launch stream"         # tells the AI what the stream is about 
 # Highlight clips (score >= auto_post_min_score) are edited and uploaded to YouTube with no human step,
 # unless the AI flags a risk (music, sexual, hate, off-topic, ...) or the hourly limit is reached: those wait in
 # queue/pending/ for `clipfarm queue approve`. Log: queue/autopost.jsonl. Comment out to turn off.
-auto_post_min_score = 60            # GTA 6 launch: ~3 candidates/hour at 60 (70 gave ~1)
+auto_post_min_score = 90            # = judge hype (0-100) when [judge] is on
 auto_post_max_per_hour = 3

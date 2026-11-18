@@ -56,3 +56,11 @@ def test_backlog_respects_pause_and_cap(tmp_path, monkeypatch):
     ap.paused_until = 0
     ap.flush_backlog()
     assert sent == ["clip 90"]  # best score first, then the 1/hour cap stops it
+
+
+def test_judge_chat_sample_keeps_times_and_limit():
+    from clipfarm.judge import chat_lines
+    meta = {"chat_timed": [{"t": i / 2, "user": f"u{i}", "text": "o7 crash"} for i in range(400)]}
+    lines = chat_lines(meta, limit=80).splitlines()
+    assert len(lines) == 80 and lines[0].startswith("[0] u0:") and "o7 crash" in lines[-1]
+    assert chat_lines({}) == "(no chat)"
