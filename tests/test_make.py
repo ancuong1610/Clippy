@@ -38,3 +38,23 @@ def test_shift_words_and_timestamped():
     ws = shift_words(W, 3.0, 7.9)
     assert ws[0].start == 0.0 and ws[0].text == "before" and all(w.end <= 5.2 for w in ws)
     assert timestamped(W[:4], every=2).startswith("[0.0] i played [2.0] fortnight")
+
+
+def test_facecam_crop_stops_at_cam_border():
+    """Cam (static) with a hard bottom border and changing 'chat overlay' text under it: crop must end at the border."""
+    import numpy as np
+
+    from clipfarm.face import snap_to_cam
+    rng = np.random.default_rng(0)
+    frames = []
+    for _ in range(8):
+        f = np.full((720, 1280, 3), 90, np.uint8)
+        f[200:360, 40:260] = 140                       # cam area (static room)
+        f[360:364, 40:260] = 250                       # cam bottom border line at y=360
+        f[370:460, 40:260] = rng.integers(0, 255, (90, 220, 3))  # chat overlay below: changes every frame
+        frames.append(f)
+    box = (40 / 1280, 200 / 720, 220 / 1280, 260 / 720)   # face-multiple crop: runs to y=460, into the chat
+    face = (120 / 1280, 250 / 720, 50 / 1280, 60 / 720)
+    x, y, w, h = snap_to_cam(frames, box, face)
+    assert (y + h) * 720 <= 364  # ends at the border, not in the chat
+    assert w * 1280 >= 2.2 * 50  # still head-and-shoulders, not a face-only crop

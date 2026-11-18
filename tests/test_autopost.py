@@ -46,6 +46,7 @@ def test_backlog_respects_pause_and_cap(tmp_path, monkeypatch):
     root = tmp_path / "q"
     ap = AutoPoster({"post": {"auto_post_min_score": 60, "auto_post_max_per_hour": 1, "queue_dir": str(root)}})
     for sc in (61, 90):
+        v.write_bytes(f"fake {sc}".encode())  # distinct videos (identical ones are deduped)
         it = P.add(root, v, f"clip {sc}", "xqc", {}, score=sc)
         P.move(root, it.id, "pending", "approved")
     sent = []

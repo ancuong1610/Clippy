@@ -31,7 +31,9 @@ def test_auto_approve_only_above_score(tmp_path, video):
     root = tmp_path / "q"
     cfg = {**CFG, "auto_approve_min_score": 70}
     hi = P.add(root, video, "big", "kaicenat", cfg, score=80)
-    lo = P.add(root, video, "small", "kaicenat", cfg, score=40)
+    v2 = video.with_name("y_short.mp4")
+    v2.write_bytes(b"other")
+    lo = P.add(root, v2, "small", "kaicenat", cfg, score=40)
     assert [i.id for _, i in P.items(root, "approved")] == [hi.id]
     assert [i.id for _, i in P.items(root, "pending")] == [lo.id]
 
@@ -80,3 +82,16 @@ def test_titles_validate():
         validate({"youtube_titles": ["x"], "thumbnail_text": "one two three four five six seven"})
     p = build_prompt("xQc", "GTA 6", "hello world", ["u: KEKW"])
     assert "xQc" in p and "u: KEKW" in p and "TRUE to the clip" in p
+
+
+def test_same_video_or_source_never_queued_twice(tmp_path, video):
+    root = tmp_path / "q"
+    it = P.add(root, video, "first", "xqc", CFG, source_clip="clips/xqc/a.mp4")
+    with pytest.raises(P.DuplicateItem):
+        P.add(root, video, "again", "xqc", CFG)  # same file
+    P.move(root, it.id, "pending", "posted")
+    other = video.with_name("other_short.mp4")
+    other.write_bytes(b"different")
+    with pytest.raises(P.DuplicateItem):
+        P.add(root, other, "re-edit", "xqc", CFG, source_clip="clips/xqc/a.mp4")  # same source, already posted
+    assert P.add(root, other, "new", "xqc", CFG, source_clip="clips/xqc/b.mp4").video_hash

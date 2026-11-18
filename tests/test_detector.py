@@ -127,3 +127,36 @@ def test_chat_unison_bonus_applies_to_gameplay_and_cutscenes():
     chat = [{"t": i * 0.2, "user": f"u{i}", "text": "KEKW"} for i in range(40)]
     assert final_score({"hype": 80, "cutscene": False}, chat)["hype"] == 95
     assert final_score({"hype": 80, "cutscene": True}, chat)["hype"] == 95  # owner: cutscenes are fine
+
+
+def test_game_filter_category_then_title():
+    from clipfarm.recorder import plays
+    g = r"grand theft auto vi|\bgta ?(6|vi)\b"
+    assert plays({"category": "Grand Theft Auto VI", "title": "x"}, g)
+    assert plays({"category": "Gaming", "title": "PLAYING GTA 6 EARLY ACCESS"}, g)  # YouTube
+    assert not plays({"category": "Grand Theft Auto IV", "title": "PLAYING EVERY GTA"}, g)
+    assert not plays({"category": "Just Chatting", "title": "GTA 6 TOMORROW reacts"}, g)
+    assert not plays({"category": "Rainbow Six Siege", "title": "ranked"}, g)
+    assert plays({"category": "Anything"}, None)
+
+
+def test_chat_gap_then_burst_is_not_a_spike():
+    """YouTube chat reader reconnect: 30 s of silence, then a normal batch arrives at once -> no event."""
+    import random
+    random.seed(3)
+    msgs = []
+    for s in range(120):  # steady 3 msg/s
+        for k in range(3):
+            msgs.append(ChatMessage(s + k / 3, f"u{random.randrange(500)}", f"word{random.randrange(300)} hi"))
+    for k in range(60):  # gap 120-150 s, then 60 msgs in 2 s (backlog flush)
+        msgs.append(ChatMessage(150 + k / 30, f"u{random.randrange(500)}", f"word{random.randrange(300)} hi"))
+    for s in range(152, 200):
+        for k in range(3):
+            msgs.append(ChatMessage(s + k / 3, f"u{random.randrange(500)}", f"word{random.randrange(300)} hi"))
+    assert detect_offline(msgs, "yt", DetectorConfig()) == []
+
+
+def test_off_topic_gets_no_chat_bonus():
+    from clipfarm.judge import final_score
+    chat = [{"t": i * 0.2, "user": f"u{i}", "text": "KEKW"} for i in range(40)]
+    assert final_score({"hype": 20, "gta6": False}, chat)["hype"] == 20

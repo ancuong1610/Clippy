@@ -107,6 +107,7 @@ class DetectorConfig:
     min_unique: int = 5  # different chatters in the window
     cooldown_s: float = 45.0
     warmup_s: float = 60.0  # learn a baseline before triggering
+    gap_reset_s: float = 20.0  # no chat this long (reader reconnect, stream hiccup): relearn from scratch
     hype_weight: float = 0.75  # extra weight for messages containing hype tokens
     caps_weight: float = 0.25  # extra weight for SHOUTING
     hype_tokens: set[str] = field(default_factory=lambda: set(DEFAULT_HYPE_TOKENS))
@@ -142,12 +143,18 @@ class SpikeDetector:
         self._last_tick: float | None = None
         self._start: float | None = None
         self._last_event: float = -math.inf
+        self._last_msg: float | None = None
 
     @property
     def baseline(self) -> float:
         return self._baseline or 0.0
 
     def add(self, msg: ChatMessage) -> None:
+        if self._last_msg is not None and msg.ts - self._last_msg > self.cfg.gap_reset_s:
+            # after a silent gap the baseline has decayed toward zero, so the first batch would look like a
+            # spike: forget the old normal and warm up again
+            self._start, self._baseline, self._wave_base = msg.ts, None, None
+        self._last_msg = msg.ts
         if self._start is None:
             self._start = msg.ts
         w, hits = message_weight(msg.text, self.cfg)

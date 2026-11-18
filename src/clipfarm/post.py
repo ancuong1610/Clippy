@@ -11,6 +11,7 @@ above a moment score skip the manual step once you have locked the style.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -37,6 +38,7 @@ class PostItem:
     youtube_description: str | None = None  # from `clipfarm title`
     tiktok_caption: str | None = None
     instagram_caption: str | None = None
+    video_hash: str | None = None  # sha1 of short.mp4: the same video is never queued twice
     created: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -52,18 +54,43 @@ def caption_for(item: PostItem, cfg: dict) -> str:
     return "\n".join(x for x in (item.description, credit, tags) if x)
 
 
+class DuplicateItem(ValueError):
+    """The video (or its source clip) is already in the queue or was already posted."""
+
+
+def file_hash(p: Path) -> str:
+    h = hashlib.sha1()
+    with p.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def find_duplicate(root: Path, video_hash: str, source_clip: str | None) -> tuple[str, PostItem] | None:
+    for st in STATES:
+        for _, it in items(root, st):
+            if it.video_hash == video_hash or (source_clip and it.source_clip == source_clip):
+                return st, it
+    return None
+
+
 def add(root: Path, video: Path, title: str, streamer: str, cfg: dict, thumbnail: Path | None = None,
         score: int | None = None, source_clip: str | None = None, titles: dict | None = None) -> PostItem:
     if len(title) > 100:
         raise SystemExit("title > 100 chars (YouTube limit)")
     titles = titles or {}
+    vh = file_hash(video)
+    dup = find_duplicate(root, vh, source_clip)
+    if dup:
+        raise DuplicateItem(f"already {dup[0]}: {dup[1].id}  {dup[1].title}")
     item = PostItem(
         id=datetime.now().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6],
         title=title, streamer=streamer, platforms=list(cfg.get("platforms", ["tiktok", "youtube", "instagram"])),
         description=cfg.get("description", ""), tags=list(cfg.get("tags", [])) + [streamer],
         score=score, source_clip=source_clip,
         youtube_description=titles.get("youtube_description"),
-        tiktok_caption=titles.get("tiktok_caption"), instagram_caption=titles.get("instagram_caption"))
+        tiktok_caption=titles.get("tiktok_caption"), instagram_caption=titles.get("instagram_caption"),
+        video_hash=vh)
     state = "pending"
     floor = cfg.get("auto_approve_min_score")
     if floor is not None and score is not None and score >= floor:

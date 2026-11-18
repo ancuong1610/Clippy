@@ -9,6 +9,7 @@ length = "auto"          # auto = 30s before + 8s after spike | "15-30" (20+6) |
 min_score = 35           # signal gate (chat 60 + audio 40): only these get sent to the AI judge
 keep_low = false         # false: clips that don't make the bar are deleted (scores logged in clips/events.jsonl)
 segment_s = 10
+game = 'grand theft auto vi|\bgta ?(6|vi)\b'   # only record streams playing this (category + title, regex)
 buffer_minutes = 15
 quality = "720p60,720p,best"  # 720p keeps 10 streams under ~45 Mbps; Shorts are 1080x1920 anyway
 chat_video_offset_s = 0  # +N if our video arrives N s later than chat (tune after first clips)

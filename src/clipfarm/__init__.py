@@ -79,10 +79,18 @@ class Channel:
         self.segment_s = clip.get("segment_s", 10)
         self.out_dir = out_dir / self.name
         self.rec = Recorder(self.name, self.url, buffer_dir, ch.get("quality", clip.get("quality", "best")),
-                            self.segment_s, int(clip.get("buffer_minutes", 15) * 60))
+                            self.segment_s, int(clip.get("buffer_minutes", 15) * 60),
+                            game=ch.get("game", clip.get("game")))
         self.det = SpikeDetector(self.name, detector_config({**cfg["detector"], **ch.get("detector", {})}))
         self.history: deque[ChatMessage] = deque()
         self.msg_count = 0
+        self.clip_tasks: set[asyncio.Task] = set()
+
+    def _clip_done(self, task: asyncio.Task) -> None:
+        self.clip_tasks.discard(task)
+        if not task.cancelled() and task.exception():
+            log.error("[%s] clip failed: %r", self.name, task.exception(),
+                      exc_info=task.exception())
 
     async def read_chat(self):
         async for m in chat_source(self.platform, self.name, self.url):
@@ -97,10 +105,14 @@ class Channel:
             while self.history and self.history[0].ts < now - 180:
                 self.history.popleft()
             ev = self.det.tick(now - CHAT_LAG_S.get(self.platform, 0.0))
-            if ev:
+            if ev and not self.rec.live:
+                log.debug("[%s] spike while not recording — ignored", self.name)
+            elif ev:
                 log.info("[%s] 🔥 SPIKE ratio=%.1fx msgs=%d users=%d tokens=%s",
                          self.name, ev.ratio, ev.msgs, ev.unique_users, ev.top_tokens)
-                asyncio.create_task(self.make_clip(ev))
+                task = asyncio.create_task(self.make_clip(ev))
+                self.clip_tasks.add(task)  # keep a reference: un-referenced tasks can vanish silently
+                task.add_done_callback(self._clip_done)
             if now - last_stat >= 60:
                 log.info("[%s] live=%s chat=%d msg/min baseline=%.1f/%.0fs segs=%d",
                          self.name, self.rec.live, self.msg_count, self.det.baseline,
@@ -310,7 +322,10 @@ def main() -> None:
             title = args.title or ((titles or {}).get("youtube_titles") or [None])[0]
             if not title:
                 raise SystemExit("no --title and no generated titles — run `clipfarm title <raw clip>` first")
-            it = P.add(root, v, title, streamer, pcfg, args.thumb, score, str(v), titles)
+            try:
+                it = P.add(root, v, title, streamer, pcfg, args.thumb, score, str(v), titles)
+            except P.DuplicateItem as e:
+                raise SystemExit(f"not queued — {e}")
             state = "approved" if (root / "approved" / it.id).exists() else "pending"
             print(f"{state}: {it.id}  {it.title}  -> {', '.join(it.platforms)}")
         elif args.action == "list":

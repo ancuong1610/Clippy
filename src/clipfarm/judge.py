@@ -34,6 +34,8 @@ Scale (be harsh; most stream moments are NOT highlights):
 - 40-69: mild: gym/workout animations, shopping, outfits, NPC small talk, driving or swimming around,
   looting, settings or menus, the streamer just talking.
 - 0-39: nothing visible happens, loading/black screens, technical issues.
+OFF-TOPIC: this channel only posts GTA 6. If the clip is not GTA 6 (another game, an older GTA, just chatting,
+IRL, a menu of a different game), score it 20 or less and set "gta6": false.
 STORY CUTSCENES are allowed (the streamer reacts over them): rate them by how big the story beat is. You can't
 hear the joke, so the chat is your evidence: chat erupting together (laughing, shock) at a cutscene = a beat
 that landed (70-85); routine dialogue with calm chat = 20-40.
@@ -43,7 +45,7 @@ chat spamming memes alone does NOT make a highlight; the payoff must be visible 
 LIVE CHAT (seconds from clip start):
 {chat}
 
-Return ONLY JSON: {{"hype": <0-100>, "cutscene": <true|false>, "payoff": "<what visibly happens, max 15 words>",
+Return ONLY JSON: {{"hype": <0-100>, "gta6": <true|false>, "cutscene": <true|false>, "payoff": "<what visibly happens, max 15 words>",
 "why": "<one sentence: why this score vs the reference moments>"}}"""
 
 
@@ -89,7 +91,7 @@ def final_score(verdict: dict, chat_timed: list[dict]) -> dict:
     + up to +15 for chat unison. Applies to cutscenes too (owner: fine to post, the streamer reacts over them)."""
     from .detector import mood_peak, unison_bonus
     share, mood = mood_peak(chat_timed)
-    bonus = unison_bonus(share)
+    bonus = 0.0 if verdict.get("gta6") is False else unison_bonus(share)
     return {**verdict, "visual": verdict["hype"], "unison": share, "mood": mood, "bonus": bonus,
             "hype": int(min(100, round(verdict["hype"] + bonus)))}
 
@@ -118,6 +120,8 @@ def judge(video: Path, meta: dict | None = None, model: str | None = None) -> di
             text = r.json()["choices"][0]["message"]["content"]
             out = json.loads(text[text.find("{"): text.rfind("}") + 1])
             out["hype"] = max(0, min(100, int(out["hype"])))
+            if out.get("gta6") is False:  # off-topic for a GTA 6 channel, whatever happens in it
+                out["hype"] = min(out["hype"], 20)
             out["model"] = model
             return out
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as e:
