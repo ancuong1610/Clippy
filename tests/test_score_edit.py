@@ -80,3 +80,10 @@ def test_thumb_text_and_compose():
     frame = Image.new("RGB", (1280, 720), (40, 120, 200))
     for fmt, size in (("16:9", (1280, 720)), ("9:16", (1080, 1920))):
         assert compose(frame, ThumbSpec("NO WAY", fmt, facecam=(0, 0.69, 0.22, 0.31))).size == size
+
+
+def test_hook_markup_keeps_punctuation():
+    from clipfarm.thumb import parse_words
+    assert parse_words("GTA 6 *FISHING*?") == [("GTA", False), ("6", False), ("FISHING?", True)]
+    assert parse_words("he got *caught*") == [("HE", False), ("GOT", False), ("CAUGHT", True)]
+    assert parse_words("NO *WAY*!!") [1] == ("WAY!!", True)

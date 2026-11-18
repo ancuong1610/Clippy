@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -113,11 +114,11 @@ def paste_shadow(canvas: Image.Image, item: Image.Image, xy: tuple[int, int], bl
 
 
 def parse_words(text: str) -> list[tuple[str, bool]]:
-    """'HE GOT *CAUGHT*' -> [('HE',False),('GOT',False),('CAUGHT',True)]"""
+    """'HE GOT *CAUGHT*?' -> [('HE',False),('GOT',False),('CAUGHT?',True)] (punctuation kept, stars dropped)"""
     out = []
     for w in text.split():
-        hl = w.startswith("*") and w.endswith("*") and len(w) > 2
-        out.append((w.strip("*").upper(), hl))
+        m = re.fullmatch(r"([^\w*]*)\*([^*]+)\*(\W*)", w)
+        out.append(((m.group(1) + m.group(2) + m.group(3)).upper(), True) if m else (w.replace("*", "").upper(), False))
     return out
 
 

@@ -56,9 +56,11 @@ def audio_jump(db: np.ndarray, focus: tuple[float, float] | None = None, win_s: 
     return float(db[i] - base), i * win_s
 
 
-def chat_points(ratio: float, msgs: int, hype_msgs: int) -> float:
+def chat_points(ratio: float, msgs: int, hype_msgs: int, wave_share: float = 0.0) -> float:
     ratio_pts = min(max(ratio - 1.5, 0) / 4.5, 1.0) * 45  # 1.5x -> 0, 6x+ -> 45
-    hype_frac = hype_msgs / msgs if msgs else 0.0
+    wave_pts = min(max(wave_share - 0.2, 0) / 0.4, 1.0) * 45  # 20 % of chatters -> 0, 60 %+ -> 45
+    ratio_pts = max(ratio_pts, wave_pts)  # capped huge chats spike by converging, not by speed
+    hype_frac = max(hype_msgs / msgs if msgs else 0.0, wave_share)
     hype_pts = min(hype_frac / 0.5, 1.0) * 15  # half the window hype -> full 15
     return ratio_pts + hype_pts
 
@@ -70,10 +72,10 @@ def audio_points(jump_db: float | None) -> float:
 
 
 def moment_score(video: Path | None, ratio: float, msgs: int, hype_msgs: int,
-                 focus: tuple[float, float] | None = None) -> MomentScore:
+                 focus: tuple[float, float] | None = None, wave_share: float = 0.0) -> MomentScore:
     jump = peak = None
     if video and Path(video).exists():
         jump, peak = audio_jump(audio_profile(Path(video)), focus)
-    c, a = chat_points(ratio, msgs, hype_msgs), audio_points(jump)
+    c, a = chat_points(ratio, msgs, hype_msgs, wave_share), audio_points(jump)
     return MomentScore(round(c + a), round(c, 1), round(a, 1),
                        None if jump is None else round(jump, 1), peak)

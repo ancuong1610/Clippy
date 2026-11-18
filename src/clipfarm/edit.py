@@ -96,7 +96,8 @@ def render_overlay(title: str, words: list[Word] | None, active: int, cap_y: int
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     if title and "*" in title:  # hook banner: big words, *payoff* word in yellow
-        toks = [(w.strip("*").upper(), w.startswith("*") and w.endswith("*")) for w in title.split()]
+        from .thumb import parse_words
+        toks = parse_words(title)
         lines = [toks[:2], toks[2:]] if len(toks) > 2 else [toks]
         size = 112
         while size > 50:

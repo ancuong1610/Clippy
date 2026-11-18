@@ -36,6 +36,11 @@ Rules:
 - chat_highlights: up to 6 chat lines copied EXACTLY as "user: message" from the LIVE CHAT above, that best
   show the crowd reacting to the payoff (funny, shocked, hype). NEVER pick slurs, hate, sexual content,
   harassment of anyone, personal info, links, or spam walls. [] if chat is empty or nothing qualifies.
+- autopost_risks: things that make this clip unsafe to post WITHOUT a human check. List any that apply:
+  "music" (a copyrighted song/music video is the main audio or the reason chat reacts), "sexual" (nudity,
+  strip club, sexual acts or talk), "real_violence" (real-world, not in-game), "hate" (slurs, hateful speech),
+  "harassment" (targeting a real person), "minor" (a child on screen), "unclear" (nothing happens / can't tell).
+  In-game GTA violence is fine. [] if none.
 - caption_fixes: speech-to-text mistakes in names/terms (streamers, games, slang) as [wrong, right] single
   words, e.g. [["fortnight","Fortnite"],["Automator","Automata"]]. Only clear mistakes; [] if none.
 
@@ -50,6 +55,7 @@ Return ONLY JSON:
   "best_start": <seconds>,
   "best_end": <seconds>,
   "caption_fixes": [["wrong", "right"]],
+  "autopost_risks": [],
   "chat_highlights": ["user: message"]
 }}"""
 
@@ -116,9 +122,14 @@ def validate(t: dict) -> dict:
     if not titles:
         raise ValueError("model returned no titles")
     t["youtube_titles"] = [s[:100] for s in titles][:3]
-    tt = " ".join(str(t.get("thumbnail_text", "")).split()[:4]).upper()
-    t["thumbnail_text"] = tt
+    words = str(t.get("thumbnail_text", "")).split()
+    if not 1 <= len(words) <= 6:  # never chop a hook mid-sentence ("GTA 6 NPCS ARE"): ask again
+        raise ValueError(f"hook has {len(words)} words")
+    t["thumbnail_text"] = " ".join(words).upper()
     t["tiktok_caption"] = str(t.get("tiktok_caption", ""))[:2200]
+    risks = t.get("autopost_risks")
+    # missing/garbled answer counts as a risk: unattended posting must fail closed
+    t["autopost_risks"] = [str(r) for r in risks] if isinstance(risks, list) else ["unchecked"]
     return t
 
 

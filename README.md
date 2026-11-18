@@ -5,7 +5,7 @@
 When something wild happens on stream, chat explodes a few seconds later. Clippy watches chat for that spike,
 cuts the video from ~30 s *before* it, scores how big the moment really was, and renders a 1080×1920 Short with
 a facecam stack, a hook, word-by-word captions and (for the biggest moments) the real chat reacting.
-A human approves each one before it gets posted.
+You approve each clip before it posts, or in a live run, highlight clips that pass a safety check post by themselves.
 
 <p align="center">
   <img src="docs/assets/short-frame.jpg" width="240" alt="Rendered Short: facecam on top, hook banner, captions, chat column">
@@ -30,7 +30,7 @@ flowchart LR
 | Step | What happens | Tech |
 |---|---|---|
 | Watch | Records each channel into 10 s segments; reads chat anonymously | streamlink, ffmpeg, Twitch IRC, yt-dlp |
-| Detect | Chat rate ≥ 3× the channel's own baseline, enough unique users, hype words | `detector.py` |
+| Detect | **Volume:** chat ≥ 3× faster than the channel's own normal. **Wave:** ≥ 30 % of chatters type the same thing at once ("OOOO", "HUH"), which catches huge chats that Twitch caps at ~12 msg/s | `detector.py` |
 | Score | Chat spike (60 pts) + audio jump (40 pts): screams and explosions count | `score.py` |
 | Edit | Transcribe → AI picks the 15–30 s payoff window, hook and titles → finds the facecam → renders | mlx-whisper, OpenRouter, OpenCV YuNet, Pillow, ffmpeg |
 | Post | Approval queue → YouTube upload; ready-to-paste captions for TikTok / Instagram | Composio |
@@ -44,7 +44,7 @@ brew install ffmpeg
 git clone https://github.com/ancuong1610/Clippy && cd Clippy
 uv sync
 cp .env.example .env        # add your OpenRouter key (and Composio key for posting)
-uv run pytest               # 36 tests, no network needed
+uv run pytest               # unit tests, no network needed
 ```
 
 For Twitch VOD chat, download [TwitchDownloaderCLI](https://github.com/lay295/TwitchDownloader/releases) (MIT)
@@ -57,7 +57,11 @@ and put the binary in `tools/`.
 uv run clipfarm run
 uv run clipfarm run --test-trigger 120         # pipeline check: force a clip after 120 s
 
-# 1b. Or after the stream: find spikes in a VOD's chat, download only those sections
+# 1b. Joining late? Scan only the last N minutes of a live stream's VOD (~75 s, not the whole chat)
+uv run clipfarm catchup xqc --minutes 40 --top 5
+uv run clipfarm run --only xqc,kaicenat        # …then track live from now on
+
+# 1c. After the stream: find spikes in a full VOD's chat, download only those sections
 tools/TwitchDownloaderCLI chatdownload -u https://www.twitch.tv/videos/<id> -o chat.json
 uv run clipfarm analyze chat.json --vod https://www.twitch.tv/videos/<id> --top 10
 
@@ -71,6 +75,14 @@ uv run clipfarm queue approve <id>             # nothing is posted without this
 uv run clipfarm post --dry-run                 # shows exactly what would be sent
 uv run clipfarm post
 ```
+
+**Auto-post (live run only).** With `auto_post_min_score = 70` in `[post]`, `clipfarm run` edits every highlight
+clip and uploads it to YouTube without a human step. Clips skip auto-post and wait in `queue/pending/` when:
+- the AI flags a risk (copyrighted music, sexual content, hate, harassment, a minor on screen, or an unclear
+  moment), or its safety answer is missing;
+- `auto_post_max_per_hour` (default 2) is reached.
+
+Every decision is logged to `queue/autopost.jsonl`. Comment out `auto_post_min_score` to turn it off.
 
 Clips land in `clips/<channel>/<time>_s<score>.mp4` with a `.json` holding the chat, score and spike time.
 Clips scoring below `min_score` go to `clips/<channel>/low/`.
@@ -110,7 +122,7 @@ Everything lives in [channels.toml](channels.toml):
 | `[clip]` | `length` (`auto` / `15-30` / `30-60`), `min_score`, `quality` |
 | `[detector]` | `ratio` (3.0; lower means more clips), `min_unique`, `cooldown_s` |
 | `[[channel]]` | `name` and `platform` (`twitch` / `youtube`); optional per-channel `[channel.detector]` |
-| `[post]` | `platforms`, `min_queue_score`, `tags`, `credit_template`, `youtube_privacy` |
+| `[post]` | `platforms`, `min_queue_score`, `tags`, `credit_template`, `youtube_privacy`, `context`, `auto_post_min_score`, `auto_post_max_per_hour` |
 
 Keys go in `.env` (see [.env.example](.env.example)):
 
@@ -137,6 +149,8 @@ src/clipfarm/
   chatoverlay.py   chat column: pick, filter, schedule, draw
   thumb.py         thumbnails
   make.py          one-shot pipeline used by `clipfarm make`
+  catchup.py       last-N-minutes scan of a live stream's VOD
+  autopost.py      unattended highlight posting with safety gate + rate limit
   post.py          approval queue + Composio YouTube upload
   fonts.py         font lookup (macOS fonts, free fallbacks elsewhere)
 scripts/composio_youtube.py   connect a YouTube channel to Composio / test an upload

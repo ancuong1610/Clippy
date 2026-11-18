@@ -75,6 +75,8 @@ def test_titles_validate():
     from clipfarm.titles import build_prompt, validate
     t = validate({"youtube_titles": ["a" * 150, " b ", ""], "thumbnail_text": "he got *caught* today ok"})
     assert len(t["youtube_titles"][0]) == 100 and t["youtube_titles"][1] == "b"
-    assert t["thumbnail_text"] == "HE GOT *CAUGHT* TODAY"
+    assert t["thumbnail_text"] == "HE GOT *CAUGHT* TODAY OK"  # kept whole, never chopped
+    with pytest.raises(ValueError):
+        validate({"youtube_titles": ["x"], "thumbnail_text": "one two three four five six seven"})
     p = build_prompt("xQc", "GTA 6", "hello world", ["u: KEKW"])
     assert "xQc" in p and "u: KEKW" in p and "TRUE to the clip" in p

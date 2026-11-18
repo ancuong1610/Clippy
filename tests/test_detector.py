@@ -78,3 +78,19 @@ def test_live_api_tick_order():
     for i in range(60):
         det.add(ChatMessage(120 + i / 20, f"v{i}", "LMAO"))
     assert det.tick(123) is not None
+
+
+def test_wave_trigger_in_capped_chat():
+    """Constant 10 msg/s (volume can't spike) but half the chatters suddenly spam one emote."""
+    import random
+    random.seed(1)
+    words = [f"word{i}" for i in range(200)]
+    msgs = []
+    for s in range(240):
+        for k in range(10):
+            u = f"u{random.randrange(3000)}"
+            text = "OOOO OOOO" if 180 <= s < 186 and k < 6 else " ".join(random.sample(words, 3))
+            msgs.append(ChatMessage(s + k / 10, u, text))
+    ev = detect_offline(msgs, "x", DetectorConfig())
+    assert len(ev) == 1 and ev[0].trigger == "wave" and ev[0].wave_token == "oooo"
+    assert 180 <= ev[0].ts <= 190 and ev[0].wave_share >= 0.3

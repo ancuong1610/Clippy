@@ -63,8 +63,9 @@ def detector_config(over: dict) -> DetectorConfig:
 
 
 class Channel:
-    def __init__(self, ch: dict, cfg: dict, out_dir: Path, buffer_dir: Path):
+    def __init__(self, ch: dict, cfg: dict, out_dir: Path, buffer_dir: Path, autoposter=None):
         self.name = ch["name"]
+        self.autoposter = autoposter
         self.platform = ch.get("platform", "twitch")
         self.url = ch.get("url") or f"https://twitch.tv/{self.name}"
         clip = cfg["clip"]
@@ -116,7 +117,7 @@ class Channel:
                       for m in window_msgs]
         video = await cut(self.rec.segments(), t0, t1, tmp, self.segment_s)
         ms = await asyncio.to_thread(moment_score, video, ev.ratio, ev.msgs, ev.hype_msgs,
-                                     (max(0.0, self.pre - 25), self.pre + self.post))
+                                     (max(0.0, self.pre - 25), self.pre + self.post), ev.wave_share)
         sub = self.out_dir if ms.total >= self.min_score else self.out_dir / "low"
         base = sub / f"{stamp}_s{ms.total:02d}"
         base.parent.mkdir(parents=True, exist_ok=True)
@@ -129,12 +130,19 @@ class Channel:
             f.write(json.dumps({k: meta[k] for k in ("event", "score", "video")}, ensure_ascii=False) + "\n")
         log.info("[%s] ✂️  score %d (chat %.0f + audio %.0f) %s", self.name, ms.total, ms.chat, ms.audio,
                  video or "(no video buffered)")
+        if video and self.autoposter:
+            self.autoposter.submit(video, self.name, ms.total)
 
 
 async def run(cfg: dict, test_trigger: float | None):
     root = Path(cfg.get("output_dir", "clips"))
     buffer_dir = Path(cfg.get("buffer_dir", "buffer"))
-    chans = [Channel(c, cfg, root, buffer_dir) for c in cfg["channel"]]
+    from .autopost import AutoPoster
+    ap = AutoPoster(cfg)
+    if ap.enabled:
+        log.info("auto-post ON: score >= %s, max %d/hour, YouTube privacy %s", ap.min_score, ap.max_per_hour,
+                 ap.pcfg.get("youtube_privacy", "public"))
+    chans = [Channel(c, cfg, root, buffer_dir, ap if ap.enabled else None) for c in cfg["channel"]]
     tasks = []
     for c in chans:
         tasks += [c.rec.run(), c.rec.janitor(), c.read_chat(), c.tick()]
@@ -176,6 +184,14 @@ def main() -> None:
     r = sub.add_parser("run", help="watch live channels and auto-clip chat spikes")
     r.add_argument("--config", default="channels.toml", type=Path)
     r.add_argument("--test-trigger", type=float, help="force one clip after N seconds (pipeline check)")
+    r.add_argument("--only", help="comma-separated channel names from the config, e.g. xqc,kaicenat")
+    cu = sub.add_parser("catchup", help="streamer is live: scan only the last N minutes of the VOD and cut the spikes")
+    cu.add_argument("channel", help="Twitch channel name")
+    cu.add_argument("--minutes", type=float, default=40)
+    cu.add_argument("--top", type=int, default=5, help="cut only the N strongest spikes")
+    cu.add_argument("--length", choices=list(LENGTH_PRESETS), default="auto")
+    cu.add_argument("--ratio", type=float, default=None)
+    cu.add_argument("--out", type=Path, default=None, help="default: clips/<channel>/catchup")
     a = sub.add_parser("analyze", help="find spikes in a downloaded chat log (VOD offsets)")
     a.add_argument("chat", type=Path)
     a.add_argument("--length", choices=list(LENGTH_PRESETS), default="auto")
@@ -300,9 +316,33 @@ def main() -> None:
         out = args.out or args.clip.with_name(f"{args.clip.stem}_short_{args.layout}_{args.captions}.mp4")
         print(make_short(args.clip, out, title or "", args.layout, fc, captions=args.captions))
         return
+    if args.cmd == "catchup":
+        from .catchup import latest_vod, recent_chat
+        vod = latest_vod(args.channel)
+        print(f"{args.channel}: {vod.url}  {hms(vod.duration)} so far  \"{vod.title[:70]}\"")
+        print(f"downloading chat for the last {args.minutes:.0f} min …")
+        out = args.out or Path("clips") / args.channel / "catchup"
+        chat_f = recent_chat(vod, args.minutes, out / f"chat_{vod.id}_{int(vod.duration)}.json")
+        msgs = load_chat_json(chat_f)
+        pre, post = clip_window({"length": args.length})
+        cfg = DetectorConfig() if args.ratio is None else DetectorConfig(ratio=args.ratio)
+        events = sorted(detect_offline(msgs, args.channel, cfg), key=lambda e: -max(e.ratio / 3, e.wave_share / 0.3))
+        print(f"{len(msgs)} messages, {len(events)} spikes")
+        for e in events[:args.top]:
+            why = f"wave '{e.wave_token}' {e.wave_share:.0%} of chatters" if e.trigger == "wave" else f"{e.ratio:.1f}x faster chat"
+            print(f"  {hms(e.ts - pre)} → {hms(e.ts + post)}  {why}")
+        print(f"chat saved: {chat_f}  (re-tune with: clipfarm analyze {chat_f} --ratio 2 --vod {vod.url})")
+        cut_vod(vod.url, events[:args.top], pre, post, out, msgs)
+        return
     if args.cmd == "run":
+        cfg = load_config(args.config)
+        if args.only:
+            want = {x.strip().lower() for x in args.only.split(",")}
+            cfg["channel"] = [c for c in cfg["channel"] if c["name"].lower() in want]
+            if not cfg["channel"]:
+                raise SystemExit(f"--only {args.only}: none of these are in {args.config}")
         try:
-            asyncio.run(run(load_config(args.config), args.test_trigger))
+            asyncio.run(run(cfg, args.test_trigger))
         except KeyboardInterrupt:
             pass
     else:
@@ -310,31 +350,47 @@ def main() -> None:
                                            **({"pre_s": args.pre} if args.pre is not None else {}),
                                            **({"post_s": args.post} if args.post is not None else {})})
         cfg = DetectorConfig() if args.ratio is None else DetectorConfig(ratio=args.ratio)
-        events = detect_offline(load_chat_json(args.chat), cfg=cfg)
+        msgs = load_chat_json(args.chat)
+        events = detect_offline(msgs, cfg=cfg)
         ranked = sorted(events, key=lambda e: -e.ratio)
         print(f"{len(events)} spikes")
         for e in ranked:
             print(f"  {hms(e.ts - args.pre)} → {hms(e.ts + args.post)}  ratio={e.ratio:>5.1f}x "
                   f"msgs={e.msgs:<4} users={e.unique_users:<4} {e.top_tokens[:3]}")
         if args.vod:
-            cut_vod(args.vod, ranked[:args.top], args.pre, args.post, args.out)
+            cut_vod(args.vod, ranked[:args.top], args.pre, args.post, args.out, msgs)
 
 
-def cut_vod(vod: str, events: list[HypeEvent], pre: float, post: float, out: Path) -> None:
-    """Download only the spike sections of a VOD with yt-dlp (no full VOD download)."""
+def cut_vod(vod: str, events: list[HypeEvent], pre: float, post: float, out: Path,
+            msgs: list[ChatMessage] | None = None) -> list[Path]:
+    """Download only the spike sections of a VOD with yt-dlp (no full VOD download).
+    With `msgs`, each clip's .json also gets the chat around it (for titles and the chat column)."""
     import subprocess
     out.mkdir(parents=True, exist_ok=True)
+    made = []
     for e in events:
         a, b = max(0, e.ts - pre), e.ts + post
-        name = out / f"{hms(a).replace(':', '-')}_r{e.ratio:.0f}.mp4"
+        stem = hms(a).replace(":", "-")
+        if any(out.glob(f"{stem}_s*.mp4")):  # already cut by an earlier catchup
+            print(f"  ↩  {stem} already cut")
+            continue
+        name = out / f"{stem}_r{e.ratio:.0f}.mp4"
         cmd = [venv_bin("yt-dlp"), "-q", "--no-warnings", "-f", "best[height<=1080]/best",
                "--download-sections", f"*{a:.0f}-{b:.0f}", "--force-keyframes-at-cuts",
                "-o", str(name), vod]
         ok = subprocess.run(cmd).returncode == 0 and name.exists()
-        ms = moment_score(name if ok else None, e.ratio, e.msgs, e.hype_msgs, (max(0, pre - 25), pre + post))
+        ms = moment_score(name if ok else None, e.ratio, e.msgs, e.hype_msgs, (max(0, pre - 25), pre + post),
+                          e.wave_share)
         if ok:
             final = name.with_name(f"{hms(a).replace(':', '-')}_s{ms.total:02d}.mp4")
             name = name.rename(final)
         print(f"  {'✂️ ' if ok else '❌'} score {ms.total:>3} (chat {ms.chat:.0f} + audio {ms.audio:.0f})  {name}")
-        name.with_suffix(".json").write_text(json.dumps({"event": asdict(e), "score": ms.as_dict()},
-                                                        indent=2, ensure_ascii=False))
+        meta = {"event": asdict(e), "score": ms.as_dict(), "vod": vod, "window": [a, b], "spike_at": round(e.ts - a, 2)}
+        if msgs:
+            near = [m for m in msgs if a - 5 <= m.ts <= b]
+            meta["chat"] = [f"{m.user}: {m.text}" for m in near]
+            meta["chat_timed"] = [{"t": round(m.ts - a, 2), "user": m.user, "text": m.text} for m in near]
+        name.with_suffix(".json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+        if ok:
+            made.append(name)
+    return made

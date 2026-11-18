@@ -73,4 +73,10 @@ tags = ["GTA6", "GTA", "Shorts"]
 credit_template = "🎥 {streamer} — full stream on their channel"
 youtube_privacy = "public"
 # tiktok_privacy = "PUBLIC_TO_EVERYONE"
-# auto_approve_min_score = 70           # OFF by default: every post needs `clipfarm queue approve`
+context = "GTA 6 launch stream"         # tells the AI what the stream is about (titles, hook)
+# ---- Auto-post during `clipfarm run` (approved 2026-11-18 for the GTA 6 launch) ----
+# Highlight clips (score >= auto_post_min_score) are edited and uploaded to YouTube with no human step,
+# unless the AI flags a risk (music, sexual, hate, ...) or the hourly limit is reached: those wait in
+# queue/pending/ for `clipfarm queue approve`. Log: queue/autopost.jsonl. Comment out to turn off.
+auto_post_min_score = 70
+auto_post_max_per_hour = 2

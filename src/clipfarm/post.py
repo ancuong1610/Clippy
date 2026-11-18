@@ -120,7 +120,7 @@ def manual_pack(d: Path, item: PostItem, cfg: dict, platforms: list[str]) -> lis
     return written
 
 
-def post_composio(root: Path, cfg: dict, dry_run: bool = False) -> list[dict]:
+def post_composio(root: Path, cfg: dict, dry_run: bool = False, only: str | None = None) -> list[dict]:
     """YouTube via Composio (free; verified public uploads 2026-11-18). Other platforms -> manual pack."""
     c = None
     if not dry_run:
@@ -131,6 +131,8 @@ def post_composio(root: Path, cfg: dict, dry_run: bool = False) -> list[dict]:
         c = Composio(api_key=os.environ["COMPOSIO_API_KEY"])
     results = []
     for d, item in items(root, "approved"):
+        if only and item.id != only:
+            continue
         manual = [p for p in item.platforms if p not in AUTO_PLATFORMS]
         res: dict = {"id": item.id, "platforms": {}}
         if "youtube" in item.platforms:

@@ -1,7 +1,10 @@
 """Chat-spike detector.
 
-Scores a rolling window of chat against an adaptive (EWMA) baseline. Works the same
-for small and huge chats because the trigger is a *ratio* to the channel's own normal.
+Two triggers, both relative to the channel's own normal (adaptive EWMA baselines):
+- volume: chat suddenly gets much faster (works for small and mid-size chats);
+- wave:   a big share of chatters type the same word/emote at once ("OOOO", "HUH", "KEKW").
+  Huge chats (xQc, Kai) are capped at ~12 msg/s by Twitch, so their volume can't spike —
+  but the whole chat converging on one reaction still shows the moment.
 """
 
 from __future__ import annotations
@@ -18,6 +21,9 @@ DEFAULT_HYPE_TOKENS = {
 }
 _PHRASES = ("clip it", "clip that", "no way", "i cant", "i can't", "+2")
 _WORD_RE = re.compile(r"[\w+?💀😭😂]+", re.UNICODE)
+_STOP = {"the", "a", "an", "to", "is", "it", "he", "she", "you", "and", "of", "in", "on", "that", "this",
+         "me", "my", "so", "for", "be", "was", "at", "just", "like", "what", "his", "her", "him", "we",
+         "are", "not", "do", "no", "yes", "but", "if", "with", "has", "have", "they", "im", "u", "?"}
 
 
 @dataclass
@@ -38,6 +44,9 @@ class HypeEvent:
     msgs: int
     hype_msgs: int = 0  # messages in the window containing a hype token
     top_tokens: list[tuple[str, int]] = field(default_factory=list)
+    trigger: str = "volume"  # or "wave"
+    wave_token: str = ""
+    wave_share: float = 0.0
 
 
 @dataclass
@@ -52,6 +61,11 @@ class DetectorConfig:
     hype_weight: float = 0.75  # extra weight for messages containing hype tokens
     caps_weight: float = 0.25  # extra weight for SHOUTING
     hype_tokens: set[str] = field(default_factory=lambda: set(DEFAULT_HYPE_TOKENS))
+    # wave trigger (share of chatters typing the same token in wave_window_s)
+    wave_window_s: float = 10.0
+    wave_min_share: float = 0.30  # >= 30 % of chatters on one token ...
+    wave_ratio: float = 2.0  # ... and >= 2x the usual top-token share
+    wave_min_users: int = 20  # only meaningful in busy chats
 
 
 def message_weight(text: str, cfg: DetectorConfig) -> tuple[float, list[str]]:
@@ -73,6 +87,8 @@ class SpikeDetector:
         self.channel = channel
         self.cfg = cfg or DetectorConfig()
         self._win: deque[tuple[float, str, float, list[str]]] = deque()
+        self._wave: deque[tuple[float, str, frozenset[str]]] = deque()
+        self._wave_base: float | None = None
         self._baseline: float | None = None
         self._last_tick: float | None = None
         self._start: float | None = None
@@ -87,6 +103,26 @@ class SpikeDetector:
             self._start = msg.ts
         w, hits = message_weight(msg.text, self.cfg)
         self._win.append((msg.ts, msg.user, w, hits))
+        toks = frozenset(t for t in _WORD_RE.findall(msg.text.lower()) if len(t) >= 2 and t not in _STOP)
+        self._wave.append((msg.ts, msg.user, toks))
+
+    def _wave_score(self, now: float) -> tuple[float, str, int]:
+        """Largest share of distinct chatters who used the same token in the wave window."""
+        cutoff = now - self.cfg.wave_window_s
+        while self._wave and self._wave[0][0] < cutoff:
+            self._wave.popleft()
+        users: set[str] = set()
+        by_tok: dict[str, set[str]] = {}
+        for ts, user, toks in self._wave:
+            if ts > now:
+                continue
+            users.add(user)
+            for t in toks:
+                by_tok.setdefault(t, set()).add(user)
+        if not by_tok or not users:
+            return 0.0, "", len(users)
+        tok, us = max(by_tok.items(), key=lambda kv: len(kv[1]))
+        return len(us) / len(users), tok, len(users)
 
     def _score(self, now: float) -> tuple[float, int, int, dict[str, int], int]:
         cutoff = now - self.cfg.window_s
@@ -129,6 +165,33 @@ class SpikeDetector:
                 ratio=round(score / max(base, 1e-6), 2), unique_users=uniq, msgs=n, hype_msgs=hype,
                 top_tokens=sorted(tokens.items(), key=lambda kv: -kv[1])[:5],
             )
+
+        share, tok, wusers = self._wave_score(now)
+        wb = self._wave_base
+        if (
+            event is None
+            and wb is not None
+            and warmed
+            and wusers >= cfg.wave_min_users
+            and share >= cfg.wave_min_share
+            and share >= cfg.wave_ratio * max(wb, 0.02)
+            and now - self._last_event >= cfg.cooldown_s
+        ):
+            self._last_event = now
+            event = HypeEvent(
+                channel=self.channel, ts=now, score=round(score, 2), baseline=round(base or 0, 2),
+                ratio=round(share / max(wb, 0.02), 2), unique_users=uniq, msgs=n, hype_msgs=hype,
+                top_tokens=sorted(tokens.items(), key=lambda kv: -kv[1])[:5],
+                trigger="wave", wave_token=tok, wave_share=round(share, 2),
+            )
+        if wusers < cfg.wave_min_users:
+            pass  # too few chatters for a share to mean anything (e.g. first seconds)
+        elif wb is None:
+            self._wave_base = share
+        else:
+            dt = max(0.0, now - (self._last_tick or now))
+            alpha = 1 - math.exp(-dt / cfg.baseline_tau_s) if dt else 0.0
+            self._wave_base = wb + alpha * (min(share, max(wb, 0.05) * 1.5) - wb)
 
         # Update baseline. During warm-up: plain running mean (learn fast).
         # After warm-up: slow EWMA with clamped input so a spike doesn't inflate "normal".
