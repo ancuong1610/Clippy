@@ -42,10 +42,19 @@ Layouts: `blur` (whole frame), `square` (center square — crops out corner face
 Captions: `karaoke` (2 words, active word green — default), `hormozi` (2 words, active word on yellow pill),
 `classic` (3 words, yellow). Transcript is cached next to the clip (`<clip>.words.json`), so re-renders are fast.
 1080×1920, word-by-word captions (local Whisper large-v3-turbo on Apple Silicon, ~30–60 s per clip after
-first model download), active word in yellow, optional title box. `--facecam x,y,w,h` = facecam position as
+first model download), optional title box. `--facecam x,y,w,h` = facecam position as
 fractions of the 16:9 frame (streamers move it — check per streamer). Title defaults to the AI label if set.
 OpenShorts/SupoClip remain options for AI reframing but need Docker + a Gemini key.
 Upload stays a human decision (reused-content + copyright rules — see design doc §4).
+
+## Thumbnails
+```bash
+uv run clipfarm thumb clips/xqc/<clip>.mp4 --text "FIRST ONE *OUT*" --facecam 0,0.69,0.22,0.31 \
+  --face-focus 0.72,0.35 --format both        # 3 variants each of 1280x720 and 1080x1920, JPG < 2 MB
+```
+Big face sticker from the facecam + saturated action frame (framed away from chat overlays) + 1–4 huge words
+(`*word*` = yellow). Defaults to the clip's audio peak. Claude skill with the rules (MrBeast / GTA clip patterns,
+YouTube thumbnail policy): [.claude/skills/youtube-thumbnail](.claude/skills/youtube-thumbnail/SKILL.md).
 
 ## Optional AI labels (OpenRouter)
 Create `.env` (git-ignored) with `OPENROUTER_API_KEY=...` and optionally `OPENROUTER_MODEL=...`.
@@ -63,6 +72,7 @@ Each clip's JSON then gets `what_happened`, `title`, `keep_score` (0–10) infer
 - Unit: 18 tests pass (detector, moment score incl. synthetic loud/quiet clips, length presets, caption presets).
 - Live: xQc stream, 4 min → buffer + chat (≈600 msg/min) + forced clip = 38.0 s, 720p60, audio, 379 chat lines.
 - VOD: xQc VOD chat (8,458 msgs/20 min) → spikes ranked → 2 × 38.0 s 1080p sections cut.
-- Not yet verified: a real live spike auto-firing end-to-end; YouTube Live chat path; OpenRouter labels (no key yet).
+- YouTube Live: recording + chat via yt-dlp verified on a 24/7 stream (IShowSpeed not live at test time).
+- Not yet verified: a real live spike auto-firing end-to-end; OpenRouter labels (no key yet).
 
 Known: `chat-downloader` can no longer fetch Twitch **VOD** chat (Twitch API change) → use TwitchDownloaderCLI.

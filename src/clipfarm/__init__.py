@@ -187,7 +187,28 @@ def main() -> None:
     e.add_argument("--facecam", help="stack layout: x,y,w,h as fractions, e.g. 0,0.69,0.22,0.31")
     e.add_argument("--title", default=None, help="top text (default: label title from the clip's .json)")
     e.add_argument("--out", type=Path, default=None)
+    th = sub.add_parser("thumb", help="YouTube thumbnails (3 variants) from a clip")
+    th.add_argument("clip", type=Path)
+    th.add_argument("--text", required=True, help="1-4 words; *word* = yellow highlight, e.g. 'HE GOT *CAUGHT*'")
+    th.add_argument("--format", choices=["16:9", "9:16", "both"], default="16:9")
+    th.add_argument("--facecam", help="x,y,w,h fractions of the facecam in the clip -> big face sticker")
+    th.add_argument("--face-side", choices=["left", "right"], default="right")
+    th.add_argument("--face-focus", default="0.5,0.3", help="x,y of the face inside the facecam box (0-1)")
+    th.add_argument("--circle", help="x,y,r fractions of the thumbnail: red circle on the key thing")
+    th.add_argument("--at", type=float, help="seconds into the clip to search around (default: audio peak)")
+    th.add_argument("--variants", type=int, default=3)
+    th.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
+    if args.cmd == "thumb":
+        from .thumb import ThumbSpec, make_thumbnails
+        fc = tuple(float(x) for x in args.facecam.split(",")) if args.facecam else None
+        circ = tuple(float(x) for x in args.circle.split(",")) if args.circle else None
+        for fmt in (["16:9", "9:16"] if args.format == "both" else [args.format]):
+            ff = tuple(float(x) for x in args.face_focus.split(","))
+            spec = ThumbSpec(args.text, fmt, fc, args.face_side, circ, face_focus=ff)
+            for p in make_thumbnails(args.clip, spec, args.variants, args.at, args.out):
+                print(p)
+        return
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 
     if args.cmd == "edit":
