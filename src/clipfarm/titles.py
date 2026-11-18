@@ -39,7 +39,8 @@ Rules:
 - autopost_risks: things that make this clip unsafe to post WITHOUT a human check. List any that apply:
   "music" (a copyrighted song/music video is the main audio or the reason chat reacts), "sexual" (nudity,
   strip club, sexual acts or talk), "real_violence" (real-world, not in-game), "hate" (slurs, hateful speech),
-  "harassment" (targeting a real person), "minor" (a child on screen), "unclear" (nothing happens / can't tell).
+  "harassment" (targeting a real person), "minor" (a child on screen), "unclear" (nothing happens / can't tell),
+  "off_topic" (the clip is not about {context}).
   In-game GTA violence is fine. [] if none.
 - caption_fixes: speech-to-text mistakes in names/terms (streamers, games, slang) as [wrong, right] single
   words, e.g. [["fortnight","Fortnite"],["Automator","Automata"]]. Only clear mistakes; [] if none.
