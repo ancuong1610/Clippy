@@ -87,7 +87,10 @@ class AutoPoster:
                      score=score, source_clip=str(clip), titles=t)
         reason = self.decide(t)
         out = {"id": item.id, "title": item.title, "posted": False, "reason": reason}
-        if reason:
+        if reason and reason.startswith("YouTube daily upload limit"):
+            P.move(self.root, item.id, "pending", "approved")  # passed the safety gate: ready to post later
+            log.info("[%s] ⏸ approved, waiting for YouTube limit to reset: %s (%s)", streamer, item.title, item.id)
+        elif reason:
             log.info("[%s] 👀 needs review (%s): %s  -> clipfarm queue approve %s", streamer, reason, item.title, item.id)
         else:
             P.move(self.root, item.id, "pending", "approved")
