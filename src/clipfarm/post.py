@@ -1,4 +1,4 @@
-"""Posting queue -> Upload-Post (one API call posts to TikTok, YouTube Shorts, Instagram Reels).
+"""Posting queue -> YouTube Shorts via Composio; TikTok / Instagram get ready-to-paste caption files.
 
   queue/pending/<id>/   short.mp4 + post.json   (added by `clipfarm queue add`)
   queue/approved/<id>/  human said yes          (`clipfarm queue approve <id>`)
@@ -7,7 +7,6 @@
 
 Nothing is posted unless it sits in approved/. `auto_approve_min_score` (off by default) lets clips
 above a moment score skip the manual step once you have locked the style.
-Docs: https://docs.upload-post.com/api/upload-video
 """
 
 from __future__ import annotations
@@ -18,12 +17,9 @@ import shutil
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
-import httpx
-
-API = "https://api.upload-post.com/api/upload"
 STATES = ("pending", "approved", "posted", "failed")
 
 
@@ -99,41 +95,8 @@ def move(root: Path, item_id: str, src: str, dst: str) -> Path:
     return t
 
 
-def build_request(d: Path, item: PostItem, cfg: dict, scheduled: datetime | None = None
-                  ) -> tuple[dict, dict, dict]:
-    """Returns (headers-without-key, form data, files) — pure, testable, no network."""
-    caption = caption_for(item, cfg)
-    data: dict = {
-        "user": cfg["user"],
-        "platform[]": item.platforms,
-        "title": item.title,
-        # YouTube
-        "youtube_description": caption,
-        "privacyStatus": cfg.get("youtube_privacy", "public"),
-        "categoryId": cfg.get("youtube_category", "20"),  # 20 = Gaming
-        "tags[]": item.tags,
-        "selfDeclaredMadeForKids": "false",
-        # TikTok
-        "tiktok_title": f"{item.title}\n{caption}"[:2200],
-        # Instagram
-        "instagram_title": f"{item.title}\n{caption}"[:2200],
-        "media_type": "REELS",
-        "async_upload": "true",
-        "request_id": item.id,
-    }
-    if cfg.get("tiktok_privacy"):
-        data["privacy_level"] = cfg["tiktok_privacy"]
-    if scheduled:
-        data["scheduled_date"] = scheduled.astimezone(timezone.utc).isoformat()
-    files = {"video": (d / "short.mp4")}
-    if item.thumbnail and "youtube" in item.platforms:
-        files["thumbnail"] = d / item.thumbnail
-    headers = {"Idempotency-Key": item.id}  # a retried call can never double-post
-    return headers, data, files
-
-
 COMPOSIO_USER = "stream-chaos-clips"
-AUTO_PLATFORMS = {"composio": {"youtube"}, "upload-post": {"youtube", "tiktok", "instagram"}}
+AUTO_PLATFORMS = {"youtube"}  # posted automatically; the rest get a manual caption pack
 
 
 def youtube_args(item: PostItem, cfg: dict) -> dict:
@@ -168,7 +131,7 @@ def post_composio(root: Path, cfg: dict, dry_run: bool = False) -> list[dict]:
         c = Composio(api_key=os.environ["COMPOSIO_API_KEY"])
     results = []
     for d, item in items(root, "approved"):
-        manual = [p for p in item.platforms if p not in AUTO_PLATFORMS["composio"]]
+        manual = [p for p in item.platforms if p not in AUTO_PLATFORMS]
         res: dict = {"id": item.id, "platforms": {}}
         if "youtube" in item.platforms:
             args = youtube_args(item, cfg)
@@ -199,38 +162,6 @@ def post_composio(root: Path, cfg: dict, dry_run: bool = False) -> list[dict]:
     return results
 
 
-def post_all(root: Path, cfg: dict, dry_run: bool = False, gap_minutes: float = 0) -> list[dict]:
-    """Post everything in approved/. gap_minutes > 0 schedules them that far apart instead of all at once."""
-    if cfg.get("backend", "composio") == "composio":
-        return post_composio(root, cfg, dry_run)
-    key = os.getenv("UPLOAD_POST_API_KEY")
-    if not dry_run and not key:
-        raise SystemExit("UPLOAD_POST_API_KEY missing — put it in .env (never in code or chat)")
-    if not cfg.get("user"):
-        raise SystemExit("[post] user = <your Upload-Post profile name> missing in channels.toml")
-    results = []
-    start = datetime.now(timezone.utc) + timedelta(minutes=5)
-    for n, (d, item) in enumerate(items(root, "approved")):
-        when = start + timedelta(minutes=gap_minutes * n) if gap_minutes else None
-        headers, data, files = build_request(d, item, cfg, when)
-        if dry_run:
-            shown = {k: v for k, v in data.items() if k not in ("tiktok_title", "instagram_title")}
-            results.append({"id": item.id, "dry_run": True, "data": shown,
-                            "files": {k: str(v) for k, v in files.items()}})
-            continue
-        handles = {k: (p.name, p.open("rb")) for k, p in files.items()}
-        try:
-            r = httpx.post(API, headers={**headers, "Authorization": f"Apikey {key}"},
-                           data=data, files=handles, timeout=300)
-            body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"text": r.text}
-            ok = r.status_code in (200, 202) and body.get("success")
-        except httpx.HTTPError as e:
-            body, ok = {"error": str(e)}, False
-        finally:
-            for _, fh in handles.values():
-                fh.close()
-        dest = move(root, item.id, "approved", "posted" if ok else "failed")
-        (dest / "result.json").write_text(json.dumps(body, indent=2, ensure_ascii=False))
-        results.append({"id": item.id, "ok": ok, "response": body})
-        time.sleep(2)
-    return results
+def post_all(root: Path, cfg: dict, dry_run: bool = False) -> list[dict]:
+    """Post everything in approved/ (nothing else is ever posted)."""
+    return post_composio(root, cfg, dry_run)

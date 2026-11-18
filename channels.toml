@@ -61,13 +61,10 @@ platform = "twitch"
 # Not supported yet (Kick chat): adinross, n3on
 
 # ---- Posting ----
-# backend "composio": YouTube auto-upload (free, COMPOSIO_API_KEY in .env); TikTok/Instagram get a
-#                     ready-to-paste caption file (manual_tiktok.txt / manual_instagram.txt) next to the video.
-# backend "upload-post": all three automatic (paid, UPLOAD_POST_API_KEY + user below).
+# YouTube uploads automatically through Composio (free, COMPOSIO_API_KEY in .env). TikTok / Instagram
+# get a ready-to-paste caption file (manual_tiktok.txt / manual_instagram.txt) next to the video.
 [post]
-backend = "composio"
-composio_user = "stream-chaos-clips"
-user = ""                               # Upload-Post profile name (only for backend = "upload-post")
+composio_user = "stream-chaos-clips"   # Composio user id that owns the connected YouTube account
 platforms = ["tiktok", "youtube", "instagram"]
 queue_dir = "queue"
 min_queue_score = 50                    # clips below this moment score can't enter the queue (--force overrides)

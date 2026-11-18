@@ -1,11 +1,9 @@
-import json
-from pathlib import Path
 
 import pytest
 
 from clipfarm import post as P
 
-CFG = {"backend": "upload-post", "user": "me", "platforms": ["tiktok", "youtube", "instagram"], "tags": ["GTA6"],
+CFG = {"platforms": ["tiktok", "youtube", "instagram"], "tags": ["GTA6"],
        "credit_template": "🎥 {streamer}"}
 
 
@@ -24,8 +22,8 @@ def test_queue_flow_needs_approval(tmp_path, video):
     assert P.post_all(root, CFG, dry_run=True) == []  # nothing approved -> nothing sent
     P.move(root, it.id, "pending", "approved")
     out = P.post_all(root, CFG, dry_run=True)
-    assert out[0]["data"]["platform[]"] == ["tiktok", "youtube", "instagram"]
-    assert out[0]["data"]["user"] == "me" and out[0]["data"]["categoryId"] == "20"
+    assert out[0]["platforms"]["youtube"]["args"]["categoryId"] == "20"
+    assert out[0]["manual"] == ["tiktok", "instagram"]
     assert [i.id for _, i in P.items(root, "approved")] == [it.id]  # dry run moves nothing
 
 
@@ -38,23 +36,15 @@ def test_auto_approve_only_above_score(tmp_path, video):
     assert [i.id for _, i in P.items(root, "pending")] == [lo.id]
 
 
-def test_request_has_credit_idempotency_and_schedule(tmp_path, video):
-    from datetime import datetime, timezone
-    root = tmp_path / "q"
-    it = P.add(root, video, "t", "xqc", CFG)
-    d = root / "pending" / it.id
-    h, data, files = P.build_request(d, it, CFG, datetime(2026, 11, 20, 18, 0, tzinfo=timezone.utc))
-    assert h["Idempotency-Key"] == it.id
-    assert "🎥 xqc" in data["youtube_description"] and "#xqc" in data["youtube_description"]
-    assert data["scheduled_date"].startswith("2026-11-20T18:00")
-    assert files["video"].name == "short.mp4"
+def test_youtube_args_have_credit_and_tags(tmp_path, video):
+    it = P.add(tmp_path / "q", video, "t", "xqc", CFG)
+    args = P.youtube_args(it, CFG)
+    assert "🎥 xqc" in args["description"] and "#xqc" in args["description"]
+    assert args["privacyStatus"] == "public" and "xqc" in args["tags"]
 
 
 def test_real_post_refuses_without_key(tmp_path, video, monkeypatch):
-    monkeypatch.delenv("UPLOAD_POST_API_KEY", raising=False)
     monkeypatch.delenv("COMPOSIO_API_KEY", raising=False)
-    with pytest.raises(SystemExit):
-        P.post_all(tmp_path / "q", {**CFG, "backend": "composio"}, dry_run=False)
     with pytest.raises(SystemExit):
         P.post_all(tmp_path / "q", CFG, dry_run=False)
 
@@ -66,7 +56,7 @@ def test_title_limit(tmp_path, video):
 
 def test_composio_dry_run_youtube_auto_others_manual(tmp_path, video):
     root = tmp_path / "q"
-    cfg = {**CFG, "backend": "composio", "youtube_privacy": "unlisted"}
+    cfg = {**CFG, "youtube_privacy": "unlisted"}
     titles = {"youtube_description": "xQc says he made Fortnite. Credit xQc #xQc",
               "tiktok_caption": "xQc made Fortnite?? #xQc", "instagram_caption": "IG cap #xQc"}
     it = P.add(root, video, "xQc Claims He Made Fortnite", "xqc", cfg, titles=titles)
@@ -82,7 +72,7 @@ def test_composio_dry_run_youtube_auto_others_manual(tmp_path, video):
 
 
 def test_titles_validate():
-    from clipfarm.titles import validate, build_prompt
+    from clipfarm.titles import build_prompt, validate
     t = validate({"youtube_titles": ["a" * 150, " b ", ""], "thumbnail_text": "he got *caught* today ok"})
     assert len(t["youtube_titles"][0]) == 100 and t["youtube_titles"][1] == "b"
     assert t["thumbnail_text"] == "HE GOT *CAUGHT* TODAY"

@@ -72,6 +72,7 @@ def test_render_overlay_presets(preset):
 
 def test_thumb_text_and_compose():
     from PIL import Image
+
     from clipfarm.thumb import ThumbSpec, compose, parse_words, text_block
     assert parse_words("he got *caught*") == [("HE", False), ("GOT", False), ("CAUGHT", True)]
     tb = text_block("HE GOT *CAUGHT*", 700, 360)

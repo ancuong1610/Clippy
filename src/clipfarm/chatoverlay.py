@@ -11,9 +11,10 @@ import hashlib
 import re
 import unicodedata
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
-FONT_BOLD = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
+from .fonts import font
+
 TWITCH_COLORS = [(255, 69, 0), (30, 144, 255), (0, 255, 127), (255, 105, 180), (154, 205, 50),
                  (218, 165, 32), (138, 43, 226), (95, 158, 160), (255, 127, 80), (0, 191, 255)]
 
@@ -101,7 +102,7 @@ def draw_chat(img: Image.Image, lines: list[dict], box: tuple[int, int, int, int
     x0, y0, x1, y1 = box
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
-    f = ImageFont.truetype(FONT_BOLD, 40)
+    f = font("bold", 40)
     lh = 58
     lines = lines[-max_lines:]
     h = lh * len(lines) + 36

@@ -17,10 +17,11 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from .fonts import font
+
 log = logging.getLogger(__name__)
 
 W, H = 1080, 1920
-FONT = "/System/Library/Fonts/Supplemental/Arial Black.ttf"
 WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
 YELLOW, WHITE, BLACK = (255, 222, 0, 255), (255, 255, 255, 255), (0, 0, 0, 255)
 GREEN = (83, 252, 24, 255)
@@ -75,7 +76,7 @@ def chunk(words: list[Word], max_words: int = 3, max_gap: float = 0.6) -> list[l
 
 
 def _font(size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(FONT, size)
+    return font("black", size)
 
 
 def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> list[str]:

@@ -17,9 +17,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
-FONT = "/System/Library/Fonts/Supplemental/Impact.ttf"
+from .fonts import font
+
 YELLOW, WHITE, BLACK, RED = (255, 222, 0), (255, 255, 255), (0, 0, 0), (235, 30, 35)
 SIZES = {"16:9": (1280, 720), "9:16": (1080, 1920)}
 
@@ -129,7 +130,7 @@ def text_block(text: str, max_w: int, max_h: int, angle: float = -4) -> Image.Im
         lines.append(words[i:i + per])
     size = 400
     while size > 40:
-        f = ImageFont.truetype(FONT, size)
+        f = font("impact", size)
         stroke = max(6, size // 14)
         d = ImageDraw.Draw(Image.new("RGB", (1, 1)))
         widths = [sum(d.textlength(w + " ", font=f) for w, _ in ln) for ln in lines]

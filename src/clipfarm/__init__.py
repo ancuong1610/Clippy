@@ -1,7 +1,7 @@
 """clipfarm — live chat-spike auto-clipper.
 
   clipfarm run [--config channels.toml] [--test-trigger SECONDS]
-  clipfarm analyze CHAT.json [--pre 30 --post 8]   # offline: TwitchDownloader / chat-downloader JSON
+  clipfarm analyze CHAT.json [--vod URL]           # offline: TwitchDownloader chat JSON
 """
 
 from __future__ import annotations
@@ -22,8 +22,13 @@ from dotenv import load_dotenv
 
 from .chat import CHAT_LAG_S, chat_source
 from .clipper import cut
-from .detector import ChatMessage, DetectorConfig, HypeEvent, SpikeDetector, detect_offline
-from .labeler import label
+from .detector import (
+    ChatMessage,
+    DetectorConfig,
+    HypeEvent,
+    SpikeDetector,
+    detect_offline,
+)
 from .recorder import Recorder, venv_bin
 from .score import moment_score
 
@@ -118,14 +123,12 @@ class Channel:
         if video:
             video = video.rename(base.with_suffix(".mp4"))
         meta = {"event": asdict(ev), "score": ms.as_dict(), "video": str(video) if video else None,
-                "window": [t0, t1], "spike_at": round(ev.ts - t0, 2), "chat": chat, "chat_timed": chat_timed,
-                "label": await label(self.name, chat)}
+                "window": [t0, t1], "spike_at": round(ev.ts - t0, 2), "chat": chat, "chat_timed": chat_timed}
         base.with_suffix(".json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
         with (self.out_dir.parent / "events.jsonl").open("a") as f:
-            f.write(json.dumps({k: meta[k] for k in ("event", "score", "video", "label")}, ensure_ascii=False) + "\n")
-        title = (meta["label"] or {}).get("title", "")
-        log.info("[%s] ✂️  score %d (chat %.0f + audio %.0f) %s %s", self.name, ms.total, ms.chat, ms.audio,
-                 video or "(no video buffered)", title)
+            f.write(json.dumps({k: meta[k] for k in ("event", "score", "video")}, ensure_ascii=False) + "\n")
+        log.info("[%s] ✂️  score %d (chat %.0f + audio %.0f) %s", self.name, ms.total, ms.chat, ms.audio,
+                 video or "(no video buffered)")
 
 
 async def run(cfg: dict, test_trigger: float | None):
@@ -158,10 +161,7 @@ def load_chat_json(path: Path) -> list[ChatMessage]:
     if isinstance(data, dict) and "comments" in data:  # TwitchDownloader
         return [ChatMessage(c["content_offset_seconds"], (c.get("commenter") or {}).get("name", "?"),
                             (c.get("message") or {}).get("body", "")) for c in data["comments"]]
-    if isinstance(data, list):  # chat-downloader
-        return [ChatMessage(m["time_in_seconds"], (m.get("author") or {}).get("name", "?"),
-                            m.get("message") or "") for m in data if "time_in_seconds" in m]
-    raise SystemExit("unrecognised chat JSON (expected TwitchDownloader or chat-downloader format)")
+    raise SystemExit("unrecognised chat JSON (expected TwitchDownloaderCLI chatdownload output)")
 
 
 def hms(s: float) -> str:
@@ -190,7 +190,7 @@ def main() -> None:
     e.add_argument("--layout", choices=["blur", "square", "stack"], default="blur")
     e.add_argument("--captions", choices=["karaoke", "hormozi", "classic"], default="karaoke")
     e.add_argument("--facecam", help="stack layout: x,y,w,h as fractions, e.g. 0,0.69,0.22,0.31")
-    e.add_argument("--title", default=None, help="top text (default: label title from the clip's .json)")
+    e.add_argument("--title", default=None, help="top hook text (default: thumbnail_text from `clipfarm title`)")
     e.add_argument("--out", type=Path, default=None)
     th = sub.add_parser("thumb", help="YouTube thumbnails (3 variants) from a clip")
     th.add_argument("clip", type=Path)
@@ -224,9 +224,8 @@ def main() -> None:
     q.add_argument("--thumb", type=Path, help="add: thumbnail JPG (YouTube)")
     q.add_argument("--force", action="store_true", help="add: queue even below min_queue_score")
     q.add_argument("--config", default="channels.toml", type=Path)
-    po = sub.add_parser("post", help="post everything in queue/approved via Upload-Post")
+    po = sub.add_parser("post", help="post everything in queue/approved (YouTube via Composio)")
     po.add_argument("--dry-run", action="store_true", help="show what would be sent, send nothing")
-    po.add_argument("--gap", type=float, default=0, help="schedule posts N minutes apart instead of now")
     po.add_argument("--config", default="channels.toml", type=Path)
     args = ap.parse_args()
     if args.cmd == "make":
@@ -247,7 +246,7 @@ def main() -> None:
         pcfg = load_config(args.config).get("post", {})
         root = Path(pcfg.get("queue_dir", "queue"))
         if args.cmd == "post":
-            for r in P.post_all(root, pcfg, args.dry_run, args.gap):
+            for r in P.post_all(root, pcfg, args.dry_run):
                 print(json.dumps(r, ensure_ascii=False, indent=2))
             return
         if args.action == "add":
@@ -296,7 +295,7 @@ def main() -> None:
         title = args.title
         meta = args.clip.with_suffix(".json")
         if title is None and meta.exists():
-            title = ((json.loads(meta.read_text()).get("label") or {}).get("title")) or ""
+            title = ((json.loads(meta.read_text()).get("titles") or {}).get("thumbnail_text")) or ""
         fc = tuple(float(x) for x in args.facecam.split(",")) if args.facecam else None
         out = args.out or args.clip.with_name(f"{args.clip.stem}_short_{args.layout}_{args.captions}.mp4")
         print(make_short(args.clip, out, title or "", args.layout, fc, captions=args.captions))

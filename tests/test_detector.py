@@ -1,6 +1,12 @@
 import random
 
-from clipfarm.detector import ChatMessage, DetectorConfig, SpikeDetector, detect_offline, message_weight
+from clipfarm.detector import (
+    ChatMessage,
+    DetectorConfig,
+    SpikeDetector,
+    detect_offline,
+    message_weight,
+)
 
 
 def steady_chat(start, end, per_s, users=50, text="hello", seed=1):

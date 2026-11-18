@@ -1,6 +1,6 @@
 # Account setup for posting (do this yourself — passwords/2FA never go to Claude or into the repo)
 
-Order matters: create the 3 platform accounts first, then connect them to Upload-Post, then Whop.
+Order: create the 3 platform accounts, connect YouTube to Composio, then Whop.
 
 ## 0. Before you start
 - One **dedicated email** for the clip brand (e.g. a new Gmail). Keeps it separate from your personal accounts.
@@ -23,17 +23,15 @@ Order matters: create the 3 platform accounts first, then connect them to Upload
 2. Settings → **Account type and tools → Switch to professional account → Creator** (category: Gaming video creator).
 3. Create a **Facebook Page** for the brand and link it: Instagram → Settings → Accounts Center / Linked accounts → Facebook Page. (Required for API posting.)
 
-## 4. Upload-Post (does the actual posting)
-1. Sign up at https://www.upload-post.com (brand email).
-2. Dashboard → **Profiles → Create profile** named e.g. `clipfarm` → connect YouTube, TikTok, Instagram (each opens that platform's own login/permission screen — approve it there).
-3. Plan: Free = 10 uploads/month, **no TikTok**; Basic ≈ $24/mo adds TikTok + unlimited. Decide before launch day.
-4. Dashboard → **API Keys → create** → copy it.
-5. On the Mac (not in chat):
-   ```bash
-   cd /Users/cuong/Documents/Clipping && open -e .env
-   ```
-   add the line `UPLOAD_POST_API_KEY=<paste>` and save. Then set `user = "clipfarm"` in `channels.toml` under `[post]`.
-6. Test without posting: `uv run clipfarm post --dry-run`
+## 4. Composio (posts to YouTube, free tier)
+1. Sign up at https://composio.dev → **Settings → API keys** → create a project key (starts with `ak_`).
+2. Put it in `.env` yourself (copy `.env.example`): `COMPOSIO_API_KEY=ak_...`. Never paste keys in chat or code.
+3. Connect the channel: `uv run python scripts/composio_youtube.py connect` → open the printed link → approve
+   with the brand Google account.
+4. Test without posting: `uv run clipfarm post --dry-run`.
+
+TikTok and Instagram are not posted automatically (their APIs only allow private posts for unaudited apps);
+`clipfarm post` writes `manual_tiktok.txt` / `manual_instagram.txt` captions next to each video to paste in the app.
 
 ## 5. Whop (campaign money)
 1. Sign up at https://whop.com (brand email) → **Content Rewards** / campaigns.
@@ -50,6 +48,5 @@ Checklist
 - [ ] YouTube channel created + verified
 - [ ] TikTok (personal, public, 2FA)
 - [ ] Instagram Creator + Facebook Page linked
-- [ ] Upload-Post profile with all 3 connected, plan chosen
-- [ ] API key in `.env`, `[post] user` set, dry run OK
+- [ ] Composio key in `.env`, YouTube connected, dry run OK
 - [ ] Whop signed up, campaigns joined, payout set up

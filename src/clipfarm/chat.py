@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-import threading
 import time
 from typing import AsyncIterator
 
@@ -44,32 +43,6 @@ async def twitch_chat(login: str) -> AsyncIterator[ChatMessage]:
             log.warning("[%s] twitch chat dropped (%s), retry in %ss", login, e, backoff)
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 60)
-
-
-async def chatdownloader_chat(url: str) -> AsyncIterator[ChatMessage]:
-    """YouTube Live (and other sites chat-downloader supports). Runs the blocking
-    generator in a thread and bridges into asyncio."""
-    from chat_downloader import ChatDownloader
-
-    loop = asyncio.get_running_loop()
-    q: asyncio.Queue[ChatMessage | None] = asyncio.Queue()
-
-    def worker():
-        while True:
-            try:
-                for m in ChatDownloader().get_chat(url, chat_type="live"):
-                    author = (m.get("author") or {}).get("name", "?")
-                    msg = ChatMessage(time.time(), author, m.get("message") or "")
-                    loop.call_soon_threadsafe(q.put_nowait, msg)
-            except Exception as e:  # noqa: BLE001 - keep the reader alive
-                log.warning("chat-downloader %s: %s; retry in 30s", url, e)
-            time.sleep(30)
-
-    threading.Thread(target=worker, daemon=True).start()
-    while True:
-        m = await q.get()
-        if m is not None:
-            yield m
 
 
 def parse_yt_chat_line(line: str) -> list[ChatMessage]:
