@@ -20,7 +20,13 @@ clip = "xQc gym"
 what = "workout minigame: punching bag, squats; chat spams GIGACHAD — loud but nothing happens"
 
 [[example]]
+score = 80
+by = "user"
+clip = "xQc, GTA 6 launch, VOD 2932113307 @ 7:42 (story cutscene)"
+what = "story cutscene on a boat with a punchline ('I'll be your best man' / 'She hates you more!'); xQc reacts; 76% of chat laughing — cutscenes are fine when the beat lands, chat shows it"
+
+[[example]]
 score = 25
-by = "user rule"
-clip = "any story cutscene"
-what = "scripted cutscene / mission dialogue, even when funny — never a highlight (story spoilers, takedown risk)"
+by = "calibration"
+clip = "quiet cutscene / mission dialogue"
+what = "routine story dialogue, nobody reacts much (chat calm or off-topic)"

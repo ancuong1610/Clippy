@@ -34,10 +34,11 @@ Scale (be harsh; most stream moments are NOT highlights):
 - 40-69: mild: gym/workout animations, shopping, outfits, NPC small talk, driving or swimming around,
   looting, settings or menus, the streamer just talking.
 - 0-39: nothing visible happens, loading/black screens, technical issues.
-HARD RULE: if the payoff is a scripted story CUTSCENE or mission dialogue (letterboxed/cinematic camera, no
-player control), score it 30 or less, however funny or dramatic.
-Chat tells you WHAT happened (e.g. "shark", "o7 crash") — use it to find the moment in the frames, but chat
-spamming memes alone does NOT make a highlight; the payoff must be visible on screen.
+STORY CUTSCENES are allowed (the streamer reacts over them): rate them by how big the story beat is. You can't
+hear the joke, so the chat is your evidence: chat erupting together (laughing, shock) at a cutscene = a beat
+that landed (70-85); routine dialogue with calm chat = 20-40.
+Chat tells you WHAT happened (e.g. "shark", "o7 crash") — use it to find the moment in the frames. For gameplay,
+chat spamming memes alone does NOT make a highlight; the payoff must be visible on screen.
 
 LIVE CHAT (seconds from clip start):
 {chat}
@@ -85,10 +86,10 @@ def chat_lines(meta: dict, limit: int = 80) -> str:
 
 def final_score(verdict: dict, chat_timed: list[dict]) -> dict:
     """Owner's rule: a hype moment is also chat spiking AND answering in one mood. Judge (what's on screen)
-    + up to +15 for chat unison. Cutscenes stay capped: chat can't push a cutscene over the bar."""
+    + up to +15 for chat unison. Applies to cutscenes too (owner: fine to post, the streamer reacts over them)."""
     from .detector import mood_peak, unison_bonus
     share, mood = mood_peak(chat_timed)
-    bonus = 0.0 if verdict.get("cutscene") else unison_bonus(share)
+    bonus = unison_bonus(share)
     return {**verdict, "visual": verdict["hype"], "unison": share, "mood": mood, "bonus": bonus,
             "hype": int(min(100, round(verdict["hype"] + bonus)))}
 
@@ -117,8 +118,6 @@ def judge(video: Path, meta: dict | None = None, model: str | None = None) -> di
             text = r.json()["choices"][0]["message"]["content"]
             out = json.loads(text[text.find("{"): text.rfind("}") + 1])
             out["hype"] = max(0, min(100, int(out["hype"])))
-            if out.get("cutscene") is True:  # enforce the rule even if the model forgets it
-                out["hype"] = min(out["hype"], 30)
             out["model"] = model
             return out
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as e:
