@@ -31,6 +31,9 @@ Only the spike sections are downloaded (yt-dlp `--download-sections`), not the w
 facecam auto-detected → `stack` layout (face top, content below), AI hook banner on top (`*payoff*` in yellow),
 `karaoke` captions (2 words, green active word) with AI spelling fixes, trimmed to the 15–30 s payoff window,
 16:9 thumbnails. Reference: [samples/approved-style/xqc_style_v1.mp4](samples/approved-style/xqc_style_v1.mp4).
+**Hype moments (score ≥ 70)** also get a Twitch-style chat column (approved 2026-11-18): up to 6 real messages
+picked by the AI + a safety filter, colored usernames, scrolling in during the ~5 s after the payoff, inside the
+content panel only. `--chat on|off` overrides. Reference: [xqc_style_v2_chat.mp4](samples/approved-style/xqc_style_v2_chat.mp4).
 
 ## Moment score (0–100)
 Every clip gets a score = **chat** (max 60: spike ratio vs normal + share of hype messages) +
