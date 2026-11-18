@@ -198,6 +198,10 @@ def main() -> None:
     th.add_argument("--at", type=float, help="seconds into the clip to search around (default: audio peak)")
     th.add_argument("--variants", type=int, default=3)
     th.add_argument("--out", type=Path, default=None)
+    ti = sub.add_parser("title", help="hooky titles/captions from transcript + chat (OpenRouter)")
+    ti.add_argument("clip", type=Path)
+    ti.add_argument("--streamer", default=None)
+    ti.add_argument("--context", default="GTA 6 livestream")
     q = sub.add_parser("queue", help="posting queue: add / list / approve / reject")
     q.add_argument("action", choices=["add", "list", "approve", "reject"])
     q.add_argument("target", nargs="?", help="add: short .mp4 | approve/reject: item id or 'all'")
@@ -210,6 +214,10 @@ def main() -> None:
     po.add_argument("--gap", type=float, default=0, help="schedule posts N minutes apart instead of now")
     po.add_argument("--config", default="channels.toml", type=Path)
     args = ap.parse_args()
+    if args.cmd == "title":
+        from .titles import make_titles
+        print(json.dumps(make_titles(args.clip, args.streamer, args.context), indent=2, ensure_ascii=False))
+        return
     if args.cmd in ("queue", "post"):
         from . import post as P
         pcfg = load_config(args.config).get("post", {})
@@ -219,14 +227,19 @@ def main() -> None:
                 print(json.dumps(r, ensure_ascii=False, indent=2))
             return
         if args.action == "add":
-            if not (args.target and args.title):
-                raise SystemExit("queue add <short.mp4> --title '...' [--streamer x] [--thumb t.jpg]")
+            if not args.target:
+                raise SystemExit("queue add <short.mp4> [--title '...'] [--streamer x] [--thumb t.jpg]")
             v = Path(args.target)
             streamer = args.streamer or v.parent.name
             meta = next((p for p in (v.with_suffix(".json"), v.parent / (v.stem.split("_short")[0] + ".json"))
                          if p.exists()), None)
-            score = ((json.loads(meta.read_text()).get("score") or {}).get("total")) if meta else None
-            it = P.add(root, v, args.title, streamer, pcfg, args.thumb, score, str(v))
+            md = json.loads(meta.read_text()) if meta else {}
+            score = (md.get("score") or {}).get("total")
+            titles = md.get("titles")
+            title = args.title or ((titles or {}).get("youtube_titles") or [None])[0]
+            if not title:
+                raise SystemExit("no --title and no generated titles — run `clipfarm title <raw clip>` first")
+            it = P.add(root, v, title, streamer, pcfg, args.thumb, score, str(v), titles)
             state = "approved" if (root / "approved" / it.id).exists() else "pending"
             print(f"{state}: {it.id}  {it.title}  -> {', '.join(it.platforms)}")
         elif args.action == "list":

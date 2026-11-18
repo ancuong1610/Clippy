@@ -60,10 +60,14 @@ platform = "twitch"
 
 # Not supported yet (Kick chat): adinross, n3on
 
-# ---- Posting (Upload-Post: one call -> TikTok + YouTube Shorts + Instagram Reels) ----
-# Key goes in .env as UPLOAD_POST_API_KEY=...  (never here)
+# ---- Posting ----
+# backend "composio": YouTube auto-upload (free, COMPOSIO_API_KEY in .env); TikTok/Instagram get a
+#                     ready-to-paste caption file (manual_tiktok.txt / manual_instagram.txt) next to the video.
+# backend "upload-post": all three automatic (paid, UPLOAD_POST_API_KEY + user below).
 [post]
-user = ""                               # your Upload-Post profile name (Upload-Post dashboard -> Profiles)
+backend = "composio"
+composio_user = "stream-chaos-clips"
+user = ""                               # Upload-Post profile name (only for backend = "upload-post")
 platforms = ["tiktok", "youtube", "instagram"]
 queue_dir = "queue"
 description = "GTA 6 launch stream highlights"

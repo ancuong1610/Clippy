@@ -38,6 +38,9 @@ class PostItem:
     thumbnail: str | None = None  # file name inside the item folder
     score: int | None = None
     source_clip: str | None = None
+    youtube_description: str | None = None  # from `clipfarm title`
+    tiktok_caption: str | None = None
+    instagram_caption: str | None = None
     created: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -54,14 +57,17 @@ def caption_for(item: PostItem, cfg: dict) -> str:
 
 
 def add(root: Path, video: Path, title: str, streamer: str, cfg: dict, thumbnail: Path | None = None,
-        score: int | None = None, source_clip: str | None = None) -> PostItem:
+        score: int | None = None, source_clip: str | None = None, titles: dict | None = None) -> PostItem:
     if len(title) > 100:
         raise SystemExit("title > 100 chars (YouTube limit)")
+    titles = titles or {}
     item = PostItem(
         id=datetime.now().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6],
         title=title, streamer=streamer, platforms=list(cfg.get("platforms", ["tiktok", "youtube", "instagram"])),
         description=cfg.get("description", ""), tags=list(cfg.get("tags", [])) + [streamer],
-        score=score, source_clip=source_clip)
+        score=score, source_clip=source_clip,
+        youtube_description=titles.get("youtube_description"),
+        tiktok_caption=titles.get("tiktok_caption"), instagram_caption=titles.get("instagram_caption"))
     state = "pending"
     floor = cfg.get("auto_approve_min_score")
     if floor is not None and score is not None and score >= floor:
@@ -126,8 +132,77 @@ def build_request(d: Path, item: PostItem, cfg: dict, scheduled: datetime | None
     return headers, data, files
 
 
+COMPOSIO_USER = "stream-chaos-clips"
+AUTO_PLATFORMS = {"composio": {"youtube"}, "upload-post": {"youtube", "tiktok", "instagram"}}
+
+
+def youtube_args(item: PostItem, cfg: dict) -> dict:
+    desc = item.youtube_description or caption_for(item, cfg)
+    if item.youtube_description and "#" not in desc:
+        desc += "\n" + " ".join("#" + t.lstrip("#") for t in item.tags)
+    return {"title": item.title, "description": desc[:5000], "tags": item.tags,
+            "categoryId": cfg.get("youtube_category", "20"),
+            "privacyStatus": cfg.get("youtube_privacy", "public")}
+
+
+def manual_pack(d: Path, item: PostItem, cfg: dict, platforms: list[str]) -> list[str]:
+    """For platforms without auto-posting: write ready-to-paste captions next to the video."""
+    written = []
+    for p in platforms:
+        cap = {"tiktok": item.tiktok_caption, "instagram": item.instagram_caption}.get(p) or \
+            f"{item.title}\n{caption_for(item, cfg)}"
+        f = d / f"manual_{p}.txt"
+        f.write_text(cap + "\n")
+        written.append(f.name)
+    return written
+
+
+def post_composio(root: Path, cfg: dict, dry_run: bool = False) -> list[dict]:
+    """YouTube via Composio (free; verified public uploads 2026-11-18). Other platforms -> manual pack."""
+    c = None
+    if not dry_run:
+        if not os.getenv("COMPOSIO_API_KEY"):
+            raise SystemExit("COMPOSIO_API_KEY missing — put it in .env")
+        from composio import Composio
+        from composio.core.models._files import FileUploadable
+        c = Composio(api_key=os.environ["COMPOSIO_API_KEY"])
+    results = []
+    for d, item in items(root, "approved"):
+        manual = [p for p in item.platforms if p not in AUTO_PLATFORMS["composio"]]
+        res: dict = {"id": item.id, "platforms": {}}
+        if "youtube" in item.platforms:
+            args = youtube_args(item, cfg)
+            if dry_run:
+                res["platforms"]["youtube"] = {"dry_run": True, "args": args}
+            else:
+                try:
+                    fu = FileUploadable.from_path(c.client, str(d / "short.mp4"), tool="YOUTUBE_MULTIPART_UPLOAD_VIDEO",
+                                                  toolkit="youtube", file_upload_allowlist=[d])
+                    r = c.tools.execute("YOUTUBE_MULTIPART_UPLOAD_VIDEO", {**args, "videoFile": fu.model_dump()},
+                                        user_id=cfg.get("composio_user", COMPOSIO_USER),
+                                        dangerously_skip_version_check=True)
+                    r = r if isinstance(r, dict) else r.model_dump()
+                    vid = ((r.get("data") or {}).get("video") or {}).get("id")
+                    res["platforms"]["youtube"] = {"ok": bool(r.get("successful") and vid), "video_id": vid,
+                                                   "url": f"https://youtube.com/shorts/{vid}" if vid else None,
+                                                   "error": r.get("error")}
+                except Exception as e:  # noqa: BLE001
+                    res["platforms"]["youtube"] = {"ok": False, "error": str(e)}
+        if manual:
+            res["manual"] = manual if dry_run else manual_pack(d, item, cfg, manual)
+        if not dry_run:
+            ok = all(v.get("ok") for v in res["platforms"].values())
+            dest = move(root, item.id, "approved", "posted" if ok else "failed")
+            (dest / "result.json").write_text(json.dumps(res, indent=2, ensure_ascii=False))
+            time.sleep(2)
+        results.append(res)
+    return results
+
+
 def post_all(root: Path, cfg: dict, dry_run: bool = False, gap_minutes: float = 0) -> list[dict]:
     """Post everything in approved/. gap_minutes > 0 schedules them that far apart instead of all at once."""
+    if cfg.get("backend", "composio") == "composio":
+        return post_composio(root, cfg, dry_run)
     key = os.getenv("UPLOAD_POST_API_KEY")
     if not dry_run and not key:
         raise SystemExit("UPLOAD_POST_API_KEY missing — put it in .env (never in code or chat)")

@@ -5,7 +5,7 @@ import pytest
 
 from clipfarm import post as P
 
-CFG = {"user": "me", "platforms": ["tiktok", "youtube", "instagram"], "tags": ["GTA6"],
+CFG = {"backend": "upload-post", "user": "me", "platforms": ["tiktok", "youtube", "instagram"], "tags": ["GTA6"],
        "credit_template": "🎥 {streamer}"}
 
 
@@ -52,6 +52,9 @@ def test_request_has_credit_idempotency_and_schedule(tmp_path, video):
 
 def test_real_post_refuses_without_key(tmp_path, video, monkeypatch):
     monkeypatch.delenv("UPLOAD_POST_API_KEY", raising=False)
+    monkeypatch.delenv("COMPOSIO_API_KEY", raising=False)
+    with pytest.raises(SystemExit):
+        P.post_all(tmp_path / "q", {**CFG, "backend": "composio"}, dry_run=False)
     with pytest.raises(SystemExit):
         P.post_all(tmp_path / "q", CFG, dry_run=False)
 
@@ -59,3 +62,29 @@ def test_real_post_refuses_without_key(tmp_path, video, monkeypatch):
 def test_title_limit(tmp_path, video):
     with pytest.raises(SystemExit):
         P.add(tmp_path / "q", video, "x" * 101, "s", CFG)
+
+
+def test_composio_dry_run_youtube_auto_others_manual(tmp_path, video):
+    root = tmp_path / "q"
+    cfg = {**CFG, "backend": "composio", "youtube_privacy": "unlisted"}
+    titles = {"youtube_description": "xQc says he made Fortnite. Credit xQc #xQc",
+              "tiktok_caption": "xQc made Fortnite?? #xQc", "instagram_caption": "IG cap #xQc"}
+    it = P.add(root, video, "xQc Claims He Made Fortnite", "xqc", cfg, titles=titles)
+    P.move(root, it.id, "pending", "approved")
+    out = P.post_composio(root, cfg, dry_run=True)
+    yt = out[0]["platforms"]["youtube"]["args"]
+    assert yt["title"] == "xQc Claims He Made Fortnite" and yt["privacyStatus"] == "unlisted"
+    assert yt["description"].startswith("xQc says he made Fortnite") and yt["categoryId"] == "20"
+    assert out[0]["manual"] == ["tiktok", "instagram"]
+    d = root / "approved" / it.id
+    assert P.manual_pack(d, P.items(root, "approved")[0][1], cfg, ["tiktok"]) == ["manual_tiktok.txt"]
+    assert (d / "manual_tiktok.txt").read_text().startswith("xQc made Fortnite??")
+
+
+def test_titles_validate():
+    from clipfarm.titles import validate, build_prompt
+    t = validate({"youtube_titles": ["a" * 150, " b ", ""], "thumbnail_text": "he got *caught* today ok"})
+    assert len(t["youtube_titles"][0]) == 100 and t["youtube_titles"][1] == "b"
+    assert t["thumbnail_text"] == "HE GOT *CAUGHT* TODAY"
+    p = build_prompt("xQc", "GTA 6", "hello world", ["u: KEKW"])
+    assert "xQc" in p and "u: KEKW" in p and "TRUE to the clip" in p

@@ -63,20 +63,29 @@ Cloned at `../openshorts` (MIT, mutonby/openshorts). Its `.env` points the momen
 (`POST /api/process` takes a clip file). Status 2026-11-18: build blocked by Docker Desktop failing to pull
 base images (Docker Hub reachable from the Mac itself).
 
-## Posting (TikTok + YouTube Shorts + Instagram Reels in one call)
-Via [Upload-Post](https://docs.upload-post.com/api/upload-video) (already audited by the platforms, so posts are public
-immediately). Put `UPLOAD_POST_API_KEY=...` in `.env` and your profile name in `[post] user` (channels.toml).
+## Titles (OpenShorts-style, plus chat)
 ```bash
-uv run clipfarm queue add clips/kaicenat/<x>_short_stack_hormozi.mp4 --title "Kai gets 5 stars in 10 seconds" \
-  --thumb clips/kaicenat/<x>_thumb_16x9_v1.jpg
+uv run clipfarm title clips/xqc/<clip>.mp4 --streamer xQc --context "GTA 6 livestream"
+```
+Reads what was said (Whisper transcript) + the chat around the moment → 3 YouTube titles (≤70 chars),
+YouTube description with credit + hashtags, TikTok and Instagram captions, thumbnail text (`*word*` = yellow),
+and a neutral "what happened" line for the reviewer. Saved into the clip's `.json`; `queue add` uses it automatically.
+Rule in the prompt: titles must be true to the clip (misleading titles break YouTube policy). Needs `OPENROUTER_API_KEY`.
+
+## Posting
+`[post] backend = "composio"` (default): **YouTube uploads automatically** via Composio (free; verified 2026-11-18
+that uploads process and are not locked private — uses `YOUTUBE_MULTIPART_UPLOAD_VIDEO`, the plain upload action
+broke files). TikTok + Instagram get `manual_tiktok.txt` / `manual_instagram.txt` captions next to the video.
+`backend = "upload-post"` posts all three automatically (paid).
+```bash
+uv run clipfarm queue add clips/xqc/<x>_short_blur_karaoke.mp4      # title/captions from `clipfarm title`
 uv run clipfarm queue list
 uv run clipfarm queue approve <id>      # or: approve all / reject <id>
 uv run clipfarm post --dry-run          # shows exactly what would be sent
-uv run clipfarm post --gap 45           # schedule approved posts 45 min apart
+uv run clipfarm post
 ```
-Nothing posts unless approved. `auto_approve_min_score` (off) can skip approval for high-score clips once the
-style is locked. Every post carries a credit line + the streamer's tag. Duplicate-safe (Idempotency-Key).
-Money: see design doc §4b–4c (campaigns pay from day one; YouTube/TikTok direct APIs are private-locked until audit).
+Nothing posts unless approved. Custom YouTube thumbnails: set in YouTube Studio (Composio's thumbnail tool needs a
+public image URL). Composio test script: `scripts/composio_youtube.py` (connect / upload / status).
 
 ## Optional AI labels (OpenRouter)
 Create `.env` (git-ignored) with `OPENROUTER_API_KEY=...` and optionally `OPENROUTER_MODEL=...`.
