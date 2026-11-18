@@ -21,6 +21,11 @@ from . import post as P
 log = logging.getLogger("clipfarm")
 
 
+def is_upload_limit(error) -> bool:
+    e = str(error or "").lower()
+    return "upload limit" in e or "exceeded the number of videos" in e or "uploadlimitexceeded" in e
+
+
 class AutoPoster:
     def __init__(self, cfg: dict):
         self.pcfg = {k: v for k, v in cfg.get("post", {}).items() if k != "auto_approve_min_score"}
@@ -30,6 +35,12 @@ class AutoPoster:
         self.root = Path(self.pcfg.get("queue_dir", "queue"))
         self.lock = asyncio.Lock()
         self.posted: deque[float] = deque()
+        # set when YouTube says the channel's daily upload limit is reached; survives restarts
+        self.pause_file = self.root / "upload_paused_until"
+        try:
+            self.paused_until = float(self.pause_file.read_text())
+        except (OSError, ValueError):
+            self.paused_until = 0.0
         self.tasks: set[asyncio.Task] = set()
 
     @property
@@ -61,6 +72,8 @@ class AutoPoster:
         risks = titles.get("autopost_risks")
         if risks is None or risks:
             return f"risk flagged: {', '.join(risks or ['unchecked'])}"
+        if (now or time.time()) < self.paused_until:
+            return "YouTube daily upload limit (paused; post later with `clipfarm post`)"
         if not self.rate_ok(now):
             return f"rate limit ({self.max_per_hour}/hour)"
         return None
@@ -84,6 +97,15 @@ class AutoPoster:
             if yt.get("ok"):
                 self.posted.append(time.time())
                 log.info("[%s] 🚀 posted: %s  %s", streamer, item.title, yt.get("url"))
+            elif is_upload_limit(yt.get("error")):
+                # channel-level daily cap: every further upload today would fail too, so stop trying and
+                # keep the edited clip approved for `clipfarm post` once the limit resets
+                self.paused_until = time.time() + 6 * 3600  # retry in 6 h (YouTube's window is rolling 24 h)
+                self.pause_file.write_text(str(self.paused_until))
+                P.move(self.root, item.id, "failed", "approved")
+                out["reason"] = "YouTube daily upload limit"
+                log.error("[%s] ⛔ YouTube daily upload limit — uploads paused 6 h; edited clips wait in "
+                          "queue/approved/ (post later: clipfarm post)", streamer)
             else:
                 log.error("[%s] upload failed (%s) — item in queue/failed/%s", streamer, yt.get("error"), item.id)
         with (self.root / "autopost.jsonl").open("a") as f:

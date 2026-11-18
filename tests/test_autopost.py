@@ -26,3 +26,14 @@ def test_rate_limit_per_hour():
     ap.posted.extend([1000.0, 1500.0])
     assert "rate limit" in ap.decide({"autopost_risks": []}, now=2000.0)
     assert ap.decide({"autopost_risks": []}, now=1000.0 + 3601) is None  # oldest expired
+
+
+def test_upload_limit_pauses_posting():
+    from clipfarm.autopost import is_upload_limit
+    err = ("YouTube upload quota exceeded: The user has exceeded the number of videos they may upload.. "
+           "You have reached your daily video upload limit. Please wait 24 hours.")
+    assert is_upload_limit(err) and not is_upload_limit("network timeout")
+    ap = AutoPoster(CFG)
+    ap.paused_until = 5000.0
+    assert "daily upload limit" in ap.decide({"autopost_risks": []}, now=4000.0)
+    assert ap.decide({"autopost_risks": []}, now=5001.0) is None

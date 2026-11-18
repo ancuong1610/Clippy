@@ -142,6 +142,9 @@ async def run(cfg: dict, test_trigger: float | None):
     if ap.enabled:
         log.info("auto-post ON: score >= %s, max %d/hour, YouTube privacy %s", ap.min_score, ap.max_per_hour,
                  ap.pcfg.get("youtube_privacy", "public"))
+        if ap.paused_until > time.time():
+            log.info("uploads paused until %s (YouTube daily limit); clips are edited and queued meanwhile",
+                     datetime.fromtimestamp(ap.paused_until).strftime("%H:%M"))
     chans = [Channel(c, cfg, root, buffer_dir, ap if ap.enabled else None) for c in cfg["channel"]]
     tasks = []
     for c in chans:
