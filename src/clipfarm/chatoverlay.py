@@ -21,7 +21,7 @@ TWITCH_COLORS = [(255, 69, 0), (30, 144, 255), (0, 255, 127), (255, 105, 180), (
 # Second safety gate behind the AI pick: slurs/hate/sexual/doxx patterns never reach the screen.
 _BLOCK = re.compile(r"(n[i1!]gg|f[a@]gg?[o0]t|f[a@]g\b|r[e3]t[a@]rd|tr[a@]nn|k[i1]ke|ch[i1]nk|sp[i1]c\b|"
                     r"wetback|c[o0]{2}n\b|kys\b|kill\s*yo?urself|rape|r[a@]p[i1]st|porn|nude|n[u\*]d[e3]s|"
-                    r"onlyfans|cum\b|dick|pussy|tits|whore|slut|https?://|www\.|\.com\b|@\w+|"
+                    r"onlyfans|cuck|cum\b|dick|pussy|tits|whore|slut|https?://|www\.|\.com\b|@\w+|"
                     r"\b\d{3}[\s.-]?\d{3}[\s.-]?\d{4}\b)", re.I)
 
 
