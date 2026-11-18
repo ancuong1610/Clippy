@@ -3,8 +3,10 @@ output_dir = "clips"     # clips/<channel>/<time>_r<ratio>.mp4 + .json, clips/ev
 buffer_dir = "buffer"    # rolling 10s segments, auto-deleted after buffer_minutes
 
 [clip]
-pre_s = 30               # seconds BEFORE chat exploded (chat reacts late)
-post_s = 8               # seconds after
+length = "auto"          # auto = 30s before + 8s after spike | "15-30" (20+6) | "30-60" (40+12)
+# pre_s = 30             # optional explicit override of the preset
+# post_s = 8
+min_score = 35           # moment score 0-100 (chat 60 + audio 40); below -> clips/<ch>/low/
 segment_s = 10
 buffer_minutes = 15
 quality = "720p60,720p,best"  # 720p keeps 10 streams under ~45 Mbps; Shorts are 1080x1920 anyway

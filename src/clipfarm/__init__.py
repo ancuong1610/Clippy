@@ -25,6 +25,7 @@ from .clipper import cut
 from .detector import ChatMessage, DetectorConfig, HypeEvent, SpikeDetector, detect_offline
 from .labeler import label
 from .recorder import Recorder, venv_bin
+from .score import moment_score
 
 log = logging.getLogger("clipfarm")
 
@@ -34,6 +35,18 @@ def load_config(path: Path) -> dict:
     cfg.setdefault("clip", {})
     cfg.setdefault("detector", {})
     return cfg
+
+
+LENGTH_PRESETS = {"auto": (30, 8), "15-30": (20, 6), "30-60": (40, 12)}  # (pre_s, post_s)
+
+
+def clip_window(clip: dict) -> tuple[float, float]:
+    """Length preset sets pre/post; explicit pre_s / post_s override it."""
+    length = clip.get("length", "auto")
+    if length not in LENGTH_PRESETS:
+        raise SystemExit(f"clip.length must be one of {list(LENGTH_PRESETS)}")
+    pre, post = LENGTH_PRESETS[length]
+    return clip.get("pre_s", pre), clip.get("post_s", post)
 
 
 def detector_config(over: dict) -> DetectorConfig:
@@ -50,7 +63,8 @@ class Channel:
         self.platform = ch.get("platform", "twitch")
         self.url = ch.get("url") or f"https://twitch.tv/{self.name}"
         clip = cfg["clip"]
-        self.pre, self.post = clip.get("pre_s", 30), clip.get("post_s", 8)
+        self.pre, self.post = clip_window(clip)
+        self.min_score = clip.get("min_score", 35)
         self.av_offset = clip.get("chat_video_offset_s", 0.0)  # +: video arrives later than chat
         self.segment_s = clip.get("segment_s", 10)
         self.out_dir = out_dir / self.name
@@ -89,17 +103,24 @@ class Channel:
         t1 = ev.ts + self.post + self.av_offset
         await asyncio.sleep(max(0, t1 + self.segment_s + 3 - time.time()))  # let segments flush
         stamp = datetime.fromtimestamp(ev.ts).strftime("%Y%m%d-%H%M%S")
-        base = self.out_dir / f"{stamp}_r{ev.ratio:.0f}"
+        tmp = self.out_dir / f"{stamp}.mp4"
         chat = [f"{m.user}: {m.text}" for m in self.history if ev.ts - self.pre - 5 <= m.ts <= ev.ts + self.post]
-        video = await cut(self.rec.segments(), t0, t1, base.with_suffix(".mp4"), self.segment_s)
-        meta = {"event": asdict(ev), "video": str(video) if video else None,
-                "window": [t0, t1], "chat": chat, "label": await label(self.name, chat)}
+        video = await cut(self.rec.segments(), t0, t1, tmp, self.segment_s)
+        ms = await asyncio.to_thread(moment_score, video, ev.ratio, ev.msgs, ev.hype_msgs,
+                                     (max(0.0, self.pre - 25), self.pre + self.post))
+        sub = self.out_dir if ms.total >= self.min_score else self.out_dir / "low"
+        base = sub / f"{stamp}_s{ms.total:02d}"
         base.parent.mkdir(parents=True, exist_ok=True)
+        if video:
+            video = video.rename(base.with_suffix(".mp4"))
+        meta = {"event": asdict(ev), "score": ms.as_dict(), "video": str(video) if video else None,
+                "window": [t0, t1], "chat": chat, "label": await label(self.name, chat)}
         base.with_suffix(".json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
         with (self.out_dir.parent / "events.jsonl").open("a") as f:
-            f.write(json.dumps({k: meta[k] for k in ("event", "video", "label")}, ensure_ascii=False) + "\n")
+            f.write(json.dumps({k: meta[k] for k in ("event", "score", "video", "label")}, ensure_ascii=False) + "\n")
         title = (meta["label"] or {}).get("title", "")
-        log.info("[%s] ✂️  clip %s %s", self.name, video or "(no video buffered)", title)
+        log.info("[%s] ✂️  score %d (chat %.0f + audio %.0f) %s %s", self.name, ms.total, ms.chat, ms.audio,
+                 video or "(no video buffered)", title)
 
 
 async def run(cfg: dict, test_trigger: float | None):
@@ -152,15 +173,17 @@ def main() -> None:
     r.add_argument("--test-trigger", type=float, help="force one clip after N seconds (pipeline check)")
     a = sub.add_parser("analyze", help="find spikes in a downloaded chat log (VOD offsets)")
     a.add_argument("chat", type=Path)
-    a.add_argument("--pre", type=float, default=30)
-    a.add_argument("--post", type=float, default=8)
+    a.add_argument("--length", choices=list(LENGTH_PRESETS), default="auto")
+    a.add_argument("--pre", type=float, default=None, help="override seconds before spike")
+    a.add_argument("--post", type=float, default=None, help="override seconds after spike")
     a.add_argument("--ratio", type=float, default=None)
     a.add_argument("--vod", help="VOD URL (e.g. https://www.twitch.tv/videos/123): also cut each spike")
     a.add_argument("--top", type=int, default=10, help="with --vod: cut only the N strongest spikes")
     a.add_argument("--out", type=Path, default=Path("clips/vod"))
     e = sub.add_parser("edit", help="make a 1080x1920 Short with word captions from a raw clip")
     e.add_argument("clip", type=Path)
-    e.add_argument("--layout", choices=["blur", "stack"], default="blur")
+    e.add_argument("--layout", choices=["blur", "square", "stack"], default="blur")
+    e.add_argument("--captions", choices=["karaoke", "hormozi", "classic"], default="karaoke")
     e.add_argument("--facecam", help="stack layout: x,y,w,h as fractions, e.g. 0,0.69,0.22,0.31")
     e.add_argument("--title", default=None, help="top text (default: label title from the clip's .json)")
     e.add_argument("--out", type=Path, default=None)
@@ -174,8 +197,8 @@ def main() -> None:
         if title is None and meta.exists():
             title = ((json.loads(meta.read_text()).get("label") or {}).get("title")) or ""
         fc = tuple(float(x) for x in args.facecam.split(",")) if args.facecam else None
-        out = args.out or args.clip.with_name(f"{args.clip.stem}_short_{args.layout}.mp4")
-        print(make_short(args.clip, out, title or "", args.layout, fc))
+        out = args.out or args.clip.with_name(f"{args.clip.stem}_short_{args.layout}_{args.captions}.mp4")
+        print(make_short(args.clip, out, title or "", args.layout, fc, captions=args.captions))
         return
     if args.cmd == "run":
         try:
@@ -183,6 +206,9 @@ def main() -> None:
         except KeyboardInterrupt:
             pass
     else:
+        args.pre, args.post = clip_window({"length": args.length,
+                                           **({"pre_s": args.pre} if args.pre is not None else {}),
+                                           **({"post_s": args.post} if args.post is not None else {})})
         cfg = DetectorConfig() if args.ratio is None else DetectorConfig(ratio=args.ratio)
         events = detect_offline(load_chat_json(args.chat), cfg=cfg)
         ranked = sorted(events, key=lambda e: -e.ratio)
@@ -205,5 +231,10 @@ def cut_vod(vod: str, events: list[HypeEvent], pre: float, post: float, out: Pat
                "--download-sections", f"*{a:.0f}-{b:.0f}", "--force-keyframes-at-cuts",
                "-o", str(name), vod]
         ok = subprocess.run(cmd).returncode == 0 and name.exists()
-        print(f"  {'✂️ ' if ok else '❌'} {name}")
-        name.with_suffix(".json").write_text(json.dumps(asdict(e), indent=2, ensure_ascii=False))
+        ms = moment_score(name if ok else None, e.ratio, e.msgs, e.hype_msgs, (max(0, pre - 25), pre + post))
+        if ok:
+            final = name.with_name(f"{hms(a).replace(':', '-')}_s{ms.total:02d}.mp4")
+            name = name.rename(final)
+        print(f"  {'✂️ ' if ok else '❌'} score {ms.total:>3} (chat {ms.chat:.0f} + audio {ms.audio:.0f})  {name}")
+        name.with_suffix(".json").write_text(json.dumps({"event": asdict(e), "score": ms.as_dict()},
+                                                        indent=2, ensure_ascii=False))

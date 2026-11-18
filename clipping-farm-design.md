@@ -64,6 +64,19 @@ Target streamers who already have a large audience → proven demand + existing 
 | **OpenShot** (GPLv3 GUI editor) | Manual editing fallback | Low priority — no headless automation API documented; ffmpeg covers automation |
 | **OpenRouter** | LLM for chat-context labeling, titles, keep/drop scoring | **Use**; key goes in local `.env` (`OPENROUTER_API_KEY`), never in chat/code |
 
+## 3d. Competitor teardown: ClipSpeed.ai (REA, 2026-11-18, public front-end only)
+
+Now a general "AI video studio" (Seedance/Kling/Veo generation, MCP for Claude, Clip Rewards marketplace); clipping is one feature. Server logic not visible — items marked *demo copy* are hard-coded page text, not telemetry.
+
+- **Moment detection (demo copy):** chat rate vs baseline ("47 msg/sec (3.2x baseline)"), audio peak, scene cut → "multi-signal AND fired" → moment score 0–100 → LLM title → "FAST clip shipped in 18.6s". Same idea as ours, plus audio + scene-cut gates.
+- **Live:** code comment "Kick + YouTube Live only — do NOT list Twitch" (FAQ claims Twitch too — inconsistent). Live = 1 credit/min watched, ~1 clip per 3 min.
+- **Layouts (code, 5):** Full-screen speaker-follow (default), Square+blur, Square+black, Landscape+blur (= our blur), Landscape+black. Facecam-top/gameplay-bottom only appears in demo copy.
+- **Captions (code):** 6 public presets (Karaoke green default, Fire, Beasty, Youshaei, Hormozi yellow pill, Cinematic gold serif) out of ~28 in engine; 16 "creator looks" commented as copied from OpusClip's gallery. **2 words per line default** (Cinematic 5). One token file drives both CSS preview and libass render.
+- **Lengths:** Auto / 15–30 s / 30–60 s.
+- **Pricing (code):** $1 3-day trial; Starter $19/300 cr (no live), Pro $39/600 cr (20 h live), Ultra $99/1,500 cr (50 h live); clipping 2 cr per source minute.
+
+**Takeaways for clipfarm:** (1) add audio-peak gate + 0–100 moment score next to chat ratio; (2) default captions to 2 words/line + 2–3 named presets; (3) add square-on-blur layout and length presets; (4) Kick live support is a real gap (they lead with Kick); (5) our ~20 s live latency is in their advertised range (~18–30 s).
+
 ## 4. Hard constraints / risks (read before monetizing)
 
 1. **YouTube reused-content policy**: raw re-uploads of someone else's stream are not monetizable even *with* permission; a few violations can demonetize the whole channel. Need real editing value (captions, cuts, context titles, commentary/zooms).

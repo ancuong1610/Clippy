@@ -26,11 +26,21 @@ uv run clipfarm analyze chat.json --vod https://www.twitch.tv/videos/<id> --top 
 ```
 Only the spike sections are downloaded (yt-dlp `--download-sections`), not the whole VOD.
 
+## Moment score (0–100)
+Every clip gets a score = **chat** (max 60: spike ratio vs normal + share of hype messages) +
+**audio** (max 40: loudest moment near the spike vs the clip's normal loudness — screams, explosions).
+File names carry it (`<time>_s72.mp4`). Below `min_score` (default 35) clips go to `clips/<ch>/low/`.
+Clip length: `length = "auto" | "15-30" | "30-60"` in channels.toml (or `analyze --length`).
+
 ## Edit → Short (local, free, no API key)
 ```bash
-uv run clipfarm edit clips/xqc/<clip>.mp4                                   # blur layout, works for anyone
+uv run clipfarm edit clips/xqc/<clip>.mp4                                   # blur layout, karaoke captions
+uv run clipfarm edit clips/xqc/<clip>.mp4 --layout square --captions hormozi
 uv run clipfarm edit clips/xqc/<clip>.mp4 --layout stack --facecam 0,0.69,0.22,0.31 --title "..."
 ```
+Layouts: `blur` (whole frame), `square` (center square — crops out corner facecams), `stack` (facecam top).
+Captions: `karaoke` (2 words, active word green — default), `hormozi` (2 words, active word on yellow pill),
+`classic` (3 words, yellow). Transcript is cached next to the clip (`<clip>.words.json`), so re-renders are fast.
 1080×1920, word-by-word captions (local Whisper large-v3-turbo on Apple Silicon, ~30–60 s per clip after
 first model download), active word in yellow, optional title box. `--facecam x,y,w,h` = facecam position as
 fractions of the 16:9 frame (streamers move it — check per streamer). Title defaults to the AI label if set.
@@ -50,7 +60,7 @@ Each clip's JSON then gets `what_happened`, `title`, `keep_score` (0–10) infer
 `brew install ffmpeg`, `uv sync`, `tools/TwitchDownloaderCLI` (MacOSArm64 release 1.56.5, MIT). Tests: `uv run pytest`.
 
 ## Verified 2026‑11‑18
-- Unit: 9 detector tests pass.
+- Unit: 18 tests pass (detector, moment score incl. synthetic loud/quiet clips, length presets, caption presets).
 - Live: xQc stream, 4 min → buffer + chat (≈600 msg/min) + forced clip = 38.0 s, 720p60, audio, 379 chat lines.
 - VOD: xQc VOD chat (8,458 msgs/20 min) → spikes ranked → 2 × 38.0 s 1080p sections cut.
 - Not yet verified: a real live spike auto-firing end-to-end; YouTube Live chat path; OpenRouter labels (no key yet).

@@ -2,7 +2,8 @@
 
 Layouts:
   blur  - full frame centered over a blurred zoomed copy (works for any streamer, no setup)
-  stack - streamer facecam on top, gameplay center-crop below (needs facecam rect per streamer)
+  stack  - streamer facecam on top, gameplay center-crop below (needs facecam rect per streamer)
+  square - center square of the frame on blurred fill (good for gameplay action in the middle)
 """
 
 from __future__ import annotations
@@ -22,6 +23,24 @@ W, H = 1080, 1920
 FONT = "/System/Library/Fonts/Supplemental/Arial Black.ttf"
 WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
 YELLOW, WHITE, BLACK = (255, 222, 0, 255), (255, 255, 255, 255), (0, 0, 0, 255)
+GREEN = (83, 252, 24, 255)
+
+
+@dataclass(frozen=True)
+class CaptionStyle:
+    words_per_line: int
+    size: int
+    active: str  # "color" = active word recolored, "pill" = active word on a colored pill
+    active_color: tuple
+    base_color: tuple = WHITE
+    stroke: int = 9
+
+
+CAPTION_PRESETS = {
+    "karaoke": CaptionStyle(2, 96, "color", GREEN),            # default (ClipSpeed/streamer clips)
+    "hormozi": CaptionStyle(2, 92, "pill", YELLOW, stroke=8),  # active word: black on yellow pill
+    "classic": CaptionStyle(3, 88, "color", YELLOW),           # our first version
+}
 
 
 @dataclass
@@ -71,7 +90,8 @@ def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> list[str]:
     return lines + ([cur] if cur else [])
 
 
-def render_overlay(title: str, words: list[Word] | None, active: int, cap_y: int, title_y: int) -> Image.Image:
+def render_overlay(title: str, words: list[Word] | None, active: int, cap_y: int, title_y: int,
+                   style: CaptionStyle = CAPTION_PRESETS["karaoke"]) -> Image.Image:
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     if title:
@@ -85,21 +105,31 @@ def render_overlay(title: str, words: list[Word] | None, active: int, cap_y: int
         for i, l in enumerate(lines):
             d.text((W / 2, top + i * lh), l, font=f, fill=BLACK, anchor="ma")
     if words:
-        f = _font(88)
+        size = style.size
+        f = _font(size)
         toks = [w.text.upper() for w in words]
         space = d.textlength(" ", font=f)
         widths = [d.textlength(t, font=f) for t in toks]
         total = sum(widths) + space * (len(toks) - 1)
-        scale = min(1.0, (W - 80) / total)
-        if scale < 1.0:
-            f = _font(int(88 * scale))
+        if total > W - 100:  # shrink long words to fit
+            size = int(size * (W - 100) / total)
+            f = _font(size)
             space = d.textlength(" ", font=f)
             widths = [d.textlength(t, font=f) for t in toks]
             total = sum(widths) + space * (len(toks) - 1)
         x = (W - total) / 2
         for i, t in enumerate(toks):
-            d.text((x, cap_y), t, font=f, fill=YELLOW if i == active else WHITE,
-                   stroke_width=9, stroke_fill=BLACK, anchor="ls")
+            is_active = i == active
+            if is_active and style.active == "pill":
+                pad = int(size * 0.18)
+                top, bottom = cap_y - int(size * 0.95), cap_y + int(size * 0.22)
+                d.rounded_rectangle([x - pad, top, x + widths[i] + pad, bottom], radius=pad,
+                                    fill=style.active_color)
+                d.text((x, cap_y), t, font=f, fill=BLACK, anchor="ls")
+            else:
+                color = style.active_color if is_active and style.active == "color" else style.base_color
+                d.text((x, cap_y), t, font=f, fill=color, stroke_width=style.stroke,
+                       stroke_fill=BLACK, anchor="ls")
             x += widths[i] + space
     return img
 
@@ -117,6 +147,12 @@ def _filter(layout: str, facecam: tuple[float, float, float, float] | None) -> t
              f"[b]crop=ih*{W}/{bot_h}:ih,scale={W}:{bot_h}[game];"
              f"[cam][game]vstack=inputs=2,setsar=1[base]")
         return f, top_h + 40, 150
+    if layout == "square":  # center square of the frame on blurred fill
+        top = (H - W) // 2 - 60
+        f = (f"[0:v]split=2[a][b];"
+             f"[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},gblur=sigma=30,eq=brightness=-0.15[bg];"
+             f"[b]crop=ih:ih,scale={W}:{W}[fg];[bg][fg]overlay=0:{top},setsar=1[base]")
+        return f, top + W + 170, top - 120
     # blur
     fg_h = round(W * 9 / 16)
     top = (H - fg_h) // 2
@@ -128,17 +164,23 @@ def _filter(layout: str, facecam: tuple[float, float, float, float] | None) -> t
 
 def make_short(src: Path, out: Path, title: str = "", layout: str = "blur",
                facecam: tuple[float, float, float, float] | None = None,
-               model: str = WHISPER_MODEL) -> Path:
+               model: str = WHISPER_MODEL, captions: str = "karaoke") -> Path:
+    style = CAPTION_PRESETS[captions]
     dur = float(subprocess.check_output(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(src)]).strip())
-    words = transcribe(src, model)
-    log.info("transcribed %d words", len(words))
+    cache = src.with_suffix(".words.json")  # transcribe once per clip, re-render freely
+    if cache.exists():
+        words = [Word(**w) for w in json.loads(cache.read_text())]
+    else:
+        words = transcribe(src, model)
+        cache.write_text(json.dumps([w.__dict__ for w in words], ensure_ascii=False))
+    log.info("%d caption words", len(words))
     base_filter, cap_y, title_y = _filter(layout, facecam)
 
     # timeline of overlay states: (start, end, chunk, active_index)
     states: list[tuple[float, float, list[Word] | None, int]] = []
     t = 0.0
-    for ch in chunk(words):
+    for ch in chunk(words, style.words_per_line):
         for i, w in enumerate(ch):
             s = max(w.start, t)
             e = ch[i + 1].start if i + 1 < len(ch) else w.end + 0.15
@@ -158,7 +200,7 @@ def make_short(src: Path, out: Path, title: str = "", layout: str = "blur",
             key = (tuple(w.text for w in ch) if ch else (), act)
             if key not in cache:
                 p = tmpd / f"o{len(cache):04d}.png"
-                render_overlay(title, ch, act, cap_y, title_y).save(p)
+                render_overlay(title, ch, act, cap_y, title_y, style).save(p)
                 cache[key] = p
             lines += [f"file '{cache[key]}'", f"duration {max(e - s, 0.001):.3f}"]
         lines.append(f"file '{cache[key]}'")  # concat demuxer needs the last file repeated
@@ -170,5 +212,4 @@ def make_short(src: Path, out: Path, title: str = "", layout: str = "blur",
                "-r", "30", "-c:v", "libx264", "-preset", "medium", "-crf", "20",
                "-c:a", "aac", "-b:a", "160k", "-t", f"{dur:.3f}", "-movflags", "+faststart", str(out)]
         subprocess.run(cmd, check=True)
-    out.with_suffix(".words.json").write_text(json.dumps([w.__dict__ for w in words], ensure_ascii=False))
     return out

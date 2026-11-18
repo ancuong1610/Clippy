@@ -36,6 +36,7 @@ class HypeEvent:
     ratio: float
     unique_users: int
     msgs: int
+    hype_msgs: int = 0  # messages in the window containing a hype token
     top_tokens: list[tuple[str, int]] = field(default_factory=list)
 
 
@@ -87,27 +88,28 @@ class SpikeDetector:
         w, hits = message_weight(msg.text, self.cfg)
         self._win.append((msg.ts, msg.user, w, hits))
 
-    def _score(self, now: float) -> tuple[float, int, int, dict[str, int]]:
+    def _score(self, now: float) -> tuple[float, int, int, dict[str, int], int]:
         cutoff = now - self.cfg.window_s
         while self._win and self._win[0][0] < cutoff:
             self._win.popleft()
         score, users, tokens = 0.0, set(), {}
-        n = 0
+        n = hype = 0
         for ts, user, w, hits in self._win:
             if ts > now:
                 continue
             n += 1
             score += w
             users.add(user)
+            hype += bool(hits)
             for h in hits:
                 tokens[h] = tokens.get(h, 0) + 1
-        return score, len(users), n, tokens
+        return score, len(users), n, tokens, hype
 
     def tick(self, now: float) -> HypeEvent | None:
         """Call regularly (e.g. every 1s). Returns an event when chat explodes."""
         if self._start is None:
             self._start = now
-        score, uniq, n, tokens = self._score(now)
+        score, uniq, n, tokens, hype = self._score(now)
         cfg = self.cfg
 
         event = None
@@ -124,7 +126,7 @@ class SpikeDetector:
             self._last_event = now
             event = HypeEvent(
                 channel=self.channel, ts=now, score=round(score, 2), baseline=round(base, 2),
-                ratio=round(score / max(base, 1e-6), 2), unique_users=uniq, msgs=n,
+                ratio=round(score / max(base, 1e-6), 2), unique_users=uniq, msgs=n, hype_msgs=hype,
                 top_tokens=sorted(tokens.items(), key=lambda kv: -kv[1])[:5],
             )
 
