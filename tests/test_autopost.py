@@ -37,3 +37,22 @@ def test_upload_limit_pauses_posting():
     ap.paused_until = 5000.0
     assert "daily upload limit" in ap.decide({"autopost_risks": []}, now=4000.0)
     assert ap.decide({"autopost_risks": []}, now=5001.0) is None
+
+
+def test_backlog_respects_pause_and_cap(tmp_path, monkeypatch):
+    from clipfarm import post as P
+    v = tmp_path / "x_short.mp4"
+    v.write_bytes(b"fake")
+    root = tmp_path / "q"
+    ap = AutoPoster({"post": {"auto_post_min_score": 60, "auto_post_max_per_hour": 1, "queue_dir": str(root)}})
+    for sc in (61, 90):
+        it = P.add(root, v, f"clip {sc}", "xqc", {}, score=sc)
+        P.move(root, it.id, "pending", "approved")
+    sent = []
+    monkeypatch.setattr(ap, "_upload", lambda i, s, t: sent.append(t) or ap.posted.append(9e9) or {})
+    ap.paused_until = 9e18
+    ap.flush_backlog()
+    assert sent == []  # paused: nothing
+    ap.paused_until = 0
+    ap.flush_backlog()
+    assert sent == ["clip 90"]  # best score first, then the 1/hour cap stops it
