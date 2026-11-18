@@ -94,7 +94,26 @@ def render_overlay(title: str, words: list[Word] | None, active: int, cap_y: int
                    style: CaptionStyle = CAPTION_PRESETS["karaoke"]) -> Image.Image:
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    if title:
+    if title and "*" in title:  # hook banner: big words, *payoff* word in yellow
+        toks = [(w.strip("*").upper(), w.startswith("*") and w.endswith("*")) for w in title.split()]
+        lines = [toks[:2], toks[2:]] if len(toks) > 2 else [toks]
+        size = 112
+        while size > 50:
+            f = _font(size)
+            if max(sum(d.textlength(w + " ", font=f) for w, _ in ln) for ln in lines if ln) <= W - 90:
+                break
+            size -= 6
+        lh = int(size * 1.08)
+        top = title_y - (len([l for l in lines if l]) * lh) // 2
+        for i, ln in enumerate(l for l in lines if l):
+            widths = [d.textlength(w, font=f) for w, _ in ln]
+            sp = d.textlength(" ", font=f)
+            x = (W - (sum(widths) + sp * (len(ln) - 1))) / 2
+            for (w, hl), wd in zip(ln, widths):
+                d.text((x, top + i * lh), w, font=f, fill=YELLOW if hl else WHITE,
+                       stroke_width=max(8, size // 11), stroke_fill=BLACK)
+                x += wd + sp
+    elif title:
         f = _font(54)
         lines = _wrap(d, title, f, W - 160)
         lh = 70
@@ -164,12 +183,15 @@ def _filter(layout: str, facecam: tuple[float, float, float, float] | None) -> t
 
 def make_short(src: Path, out: Path, title: str = "", layout: str = "blur",
                facecam: tuple[float, float, float, float] | None = None,
-               model: str = WHISPER_MODEL, captions: str = "karaoke") -> Path:
+               model: str = WHISPER_MODEL, captions: str = "karaoke",
+               words_override: list[Word] | None = None) -> Path:
     style = CAPTION_PRESETS[captions]
     dur = float(subprocess.check_output(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(src)]).strip())
     cache = src.with_suffix(".words.json")  # transcribe once per clip, re-render freely
-    if cache.exists():
+    if words_override is not None:
+        words = words_override
+    elif cache.exists():
         words = [Word(**w) for w in json.loads(cache.read_text())]
     else:
         words = transcribe(src, model)

@@ -198,6 +198,13 @@ def main() -> None:
     th.add_argument("--at", type=float, help="seconds into the clip to search around (default: audio peak)")
     th.add_argument("--variants", type=int, default=3)
     th.add_argument("--out", type=Path, default=None)
+    mk = sub.add_parser("make", help="raw clip -> titled, trimmed, facecam-stacked Short + thumbnails")
+    mk.add_argument("clip", type=Path)
+    mk.add_argument("--streamer", default=None)
+    mk.add_argument("--context", default="GTA 6 livestream")
+    mk.add_argument("--layout", choices=["auto", "stack", "blur", "square"], default="auto")
+    mk.add_argument("--captions", choices=["karaoke", "hormozi", "classic"], default="karaoke")
+    mk.add_argument("--out", type=Path, default=None, help="output folder (default: next to the clip)")
     ti = sub.add_parser("title", help="hooky titles/captions from transcript + chat (OpenRouter)")
     ti.add_argument("clip", type=Path)
     ti.add_argument("--streamer", default=None)
@@ -208,12 +215,21 @@ def main() -> None:
     q.add_argument("--title", help="add: post title (<=100 chars)")
     q.add_argument("--streamer", help="add: streamer name for credit + tag (default: from folder)")
     q.add_argument("--thumb", type=Path, help="add: thumbnail JPG (YouTube)")
+    q.add_argument("--force", action="store_true", help="add: queue even below min_queue_score")
     q.add_argument("--config", default="channels.toml", type=Path)
     po = sub.add_parser("post", help="post everything in queue/approved via Upload-Post")
     po.add_argument("--dry-run", action="store_true", help="show what would be sent, send nothing")
     po.add_argument("--gap", type=float, default=0, help="schedule posts N minutes apart instead of now")
     po.add_argument("--config", default="channels.toml", type=Path)
     args = ap.parse_args()
+    if args.cmd == "make":
+        from .make import make
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+        r = make(args.clip, args.streamer, args.context, args.layout, args.captions, args.out)
+        print(json.dumps({k: r[k] for k in ("short", "thumbnails", "window", "layout", "facecam", "caption_fixes")},
+                         indent=2, ensure_ascii=False))
+        print("titles:", json.dumps(r["titles"].get("youtube_titles"), ensure_ascii=False))
+        return
     if args.cmd == "title":
         from .titles import make_titles
         print(json.dumps(make_titles(args.clip, args.streamer, args.context), indent=2, ensure_ascii=False))
@@ -235,6 +251,9 @@ def main() -> None:
                          if p.exists()), None)
             md = json.loads(meta.read_text()) if meta else {}
             score = (md.get("score") or {}).get("total")
+            floor = pcfg.get("min_queue_score", 50)
+            if not args.force and (score is None or score < floor):
+                raise SystemExit(f"score {score} < min_queue_score {floor}: not queued (use --force to override)")
             titles = md.get("titles")
             title = args.title or ((titles or {}).get("youtube_titles") or [None])[0]
             if not title:

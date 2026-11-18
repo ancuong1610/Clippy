@@ -16,7 +16,7 @@ import httpx
 PROMPT = """You write titles for a YouTube Shorts / TikTok / Reels clip channel ("Stream Chaos Clips")
 that posts moments from big livestreamers. Clip below: streamer {streamer}, game/context: {context}.
 
-WHAT WAS SAID in the clip (speech transcript, may include game/video audio):
+WHAT WAS SAID in the clip ({duration:.0f}s long), with timestamps in seconds [start] (may include game/video audio):
 {transcript}
 
 LIVE CHAT right around the moment (how viewers reacted):
@@ -28,7 +28,13 @@ Rules:
 - No spoilers of the punchline; tease it.
 - Same language as the transcript (default English).
 - YouTube titles <= 70 chars (show fully on phones), no hashtags in titles, max 1 emoji.
-- thumbnail_text: 1-4 words, ALL CAPS, mark the single payoff word with *asterisks*.
+- thumbnail_text: 2-4 words, ALL CAPS, mark the single payoff word with *asterisks*. It is also the on-screen
+  hook, so it MUST make sense on its own to someone who knows nothing (name the topic/claim/stakes:
+  "I MADE *FORTNITE*", "5 STARS IN *10 SECONDS*"), never a fragment like "BEFORE EVERYONE".
+- best_start/best_end: the tightest {min_len}-{max_len}s window that contains the setup AND the payoff.
+  Start on the first word of a sentence, end right after the payoff/reaction. Seconds within 0-{duration:.0f}.
+- caption_fixes: speech-to-text mistakes in names/terms (streamers, games, slang) as [wrong, right] single
+  words, e.g. [["fortnight","Fortnite"],["Automator","Automata"]]. Only clear mistakes; [] if none.
 
 Return ONLY JSON:
 {{
@@ -37,7 +43,10 @@ Return ONLY JSON:
   "tiktok_caption": "<1 line hook + 3-5 hashtags, <= 150 chars>",
   "instagram_caption": "<1-2 lines + 3-5 hashtags>",
   "thumbnail_text": "<1-4 words e.g. HE GOT *CAUGHT*>",
-  "what_happened": "<1 neutral sentence, for the human reviewer>"
+  "what_happened": "<1 neutral sentence, for the human reviewer>",
+  "best_start": <seconds>,
+  "best_end": <seconds>,
+  "caption_fixes": [["wrong", "right"]]
 }}"""
 
 
@@ -55,6 +64,49 @@ def _call(prompt: str) -> dict:
     return json.loads(text[text.find("{"): text.rfind("}") + 1])
 
 
+def timestamped(words: list[dict], every: float = 3.0) -> str:
+    """'[0.0] come on bro [3.1] they are so lucky ...' — compact but lets the model pick a window."""
+    out, last = [], -every
+    for w in words:
+        if w["start"] - last >= every:
+            out.append(f"[{w['start']:.1f}]")
+            last = w["start"]
+        out.append(w["text"])
+    return " ".join(out)
+
+
+def apply_fixes(words: list[dict], fixes) -> list[dict]:
+    """Replace mis-heard words (case-insensitive, punctuation kept)."""
+    table = {}
+    for pair in fixes or []:
+        if isinstance(pair, (list, tuple)) and len(pair) == 2 and all(isinstance(x, str) for x in pair):
+            if pair[0].strip() and " " not in pair[0].strip():
+                table[pair[0].strip().lower()] = pair[1].strip()
+    out = []
+    for w in words:
+        core = w["text"].strip(".,!?;:'\"")
+        rep = table.get(core.lower())
+        out.append({**w, "text": w["text"].replace(core, rep) if rep else w["text"]})
+    return out
+
+
+def pick_window(t: dict, duration: float, words: list[dict], min_len: float = 12, max_len: float = 35
+                ) -> tuple[float, float]:
+    """Validate the model's window and snap it to word boundaries; fall back to the whole clip."""
+    try:
+        s, e = float(t.get("best_start")), float(t.get("best_end"))
+    except (TypeError, ValueError):
+        return 0.0, duration
+    s, e = max(0.0, s), min(duration, e)
+    if not (min_len <= e - s <= max_len + 5):
+        return 0.0, duration
+    starts = [w["start"] for w in words if w["start"] <= s + 0.5]
+    ends = [w["end"] for w in words if w["end"] >= e - 0.5]
+    s = max(0.0, (max(starts) if starts else s) - 0.25)
+    e = min(duration, (min(ends) if ends else e) + 0.5)
+    return round(s, 2), round(e, 2)
+
+
 def validate(t: dict) -> dict:
     titles = [s.strip() for s in t.get("youtube_titles", []) if isinstance(s, str) and s.strip()]
     if not titles:
@@ -66,9 +118,10 @@ def validate(t: dict) -> dict:
     return t
 
 
-def build_prompt(streamer: str, context: str, transcript: str, chat: list[str]) -> str:
-    return PROMPT.format(streamer=streamer, context=context,
-                         transcript=transcript[:6000] or "(no speech)",
+def build_prompt(streamer: str, context: str, transcript: str, chat: list[str], duration: float = 38,
+                 min_len: int = 15, max_len: int = 30) -> str:
+    return PROMPT.format(streamer=streamer, context=context, duration=duration, min_len=min_len,
+                         max_len=max_len, transcript=transcript[:6000] or "(no speech)",
                          chat="\n".join(chat[-200:])[:6000] or "(no chat captured)")
 
 
@@ -81,12 +134,22 @@ def make_titles(clip: Path, streamer: str | None = None, context: str = "GTA 6 l
         from .edit import transcribe
         words = [w.__dict__ for w in transcribe(clip)]
         words_f.write_text(json.dumps(words, ensure_ascii=False))
-    transcript = " ".join(w["text"] for w in words)
+    dur = float(__import__("subprocess").check_output(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(clip)]).strip())
+    transcript = timestamped(words)
     meta_f = clip.with_suffix(".json")
     meta = json.loads(meta_f.read_text()) if meta_f.exists() else {}
     chat = meta.get("chat", [])
     streamer = streamer or (meta.get("event") or {}).get("channel") or clip.parent.name
-    t = validate(_call(build_prompt(streamer, context, transcript, chat)))
+    prompt = build_prompt(streamer, context, transcript, chat, dur)
+    for attempt in range(3):  # models occasionally return broken JSON / no titles
+        try:
+            t = validate(_call(prompt))
+            break
+        except (ValueError, KeyError, httpx.HTTPError):
+            if attempt == 2:
+                raise
+    t["window"] = pick_window(t, dur, words)
     meta["titles"] = t
     meta_f.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
     return t

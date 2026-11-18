@@ -10,6 +10,7 @@ dependencies = [
     "httpx>=0.28.1",
     "mlx-whisper>=0.4.3",
     "numpy>=2.5.5",
+    "opencv-python-headless>=5.1.0.95",
     "pillow>=13.0.0",
     "python-dotenv>=1.2.4",
     "streamlink>=8.6.3",

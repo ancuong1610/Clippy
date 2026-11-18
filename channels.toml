@@ -70,6 +70,7 @@ composio_user = "stream-chaos-clips"
 user = ""                               # Upload-Post profile name (only for backend = "upload-post")
 platforms = ["tiktok", "youtube", "instagram"]
 queue_dir = "queue"
+min_queue_score = 50                    # clips below this moment score can't enter the queue (--force overrides)
 description = "GTA 6 launch stream highlights"
 tags = ["GTA6", "GTA", "Shorts"]
 credit_template = "🎥 {streamer} — full stream on their channel"
