@@ -1,11 +1,13 @@
-"""Unattended posting for the live run: highlight clips go straight to YouTube.
+"""Unattended posting for the live run.
 
-  live spike -> clip (score >= auto_post_min_score) -> make -> safety gate -> rate limit -> upload
+  live spike -> clip (hype >= auto_post_min_score) -> make -> safety gate -> queue/approved/
+  rolling poster (every minute): if allowed, upload the BEST waiting highlight -> YouTube
 
-Clips the AI flags (music, sexual, hate, off-topic, ...) or that miss the AI check land in queue/pending/ for a
-human. Safe clips over the hourly cap or during a YouTube upload-limit pause wait in queue/approved/ and are
-posted (best score first) as soon as uploads are allowed again.
-One clip is processed at a time so two streams spiking together don't overload the machine.
+Posting looks human, not like a bot: at least `auto_post_min_gap_min` between uploads, at most
+`auto_post_max_per_hour` and `auto_post_max_per_day` (rolling, counting every upload incl. manual ones),
+and a 6 h pause when YouTube reports the channel's daily upload limit.
+Clips the AI flags (music, sexual, hate, off-topic, ...) land in queue/pending/ for a human.
+One clip is edited at a time so two streams spiking together don't overload the machine.
 """
 
 from __future__ import annotations
@@ -27,15 +29,28 @@ def is_upload_limit(error) -> bool:
     return "upload limit" in e or "exceeded the number of videos" in e or "uploadlimitexceeded" in e
 
 
+def recent_posts(root: Path, within_s: float = 86400) -> list[float]:
+    """Upload times of the last 24 h (queue/posted/*/result.json), so limits survive restarts."""
+    now = time.time()
+    out = []
+    for f in (root / "posted").glob("*/result.json"):
+        t = f.stat().st_mtime
+        if now - t <= within_s:
+            out.append(t)
+    return sorted(out)
+
+
 class AutoPoster:
     def __init__(self, cfg: dict):
         self.pcfg = {k: v for k, v in cfg.get("post", {}).items() if k != "auto_approve_min_score"}
         self.min_score = self.pcfg.get("auto_post_min_score")
-        self.max_per_hour = int(self.pcfg.get("auto_post_max_per_hour", 2))
+        self.max_per_hour = int(self.pcfg.get("auto_post_max_per_hour", 3))
+        self.max_per_day = int(self.pcfg.get("auto_post_max_per_day", 12))
+        self.min_gap_s = float(self.pcfg.get("auto_post_min_gap_min", 20)) * 60
         self.context = self.pcfg.get("context", "GTA 6 livestream")
         self.root = Path(self.pcfg.get("queue_dir", "queue"))
         self.lock = asyncio.Lock()
-        self.posted: deque[float] = deque()
+        self.posted: deque[float] = deque(recent_posts(self.root))
         # set when YouTube says the channel's daily upload limit is reached; survives restarts
         self.pause_file = self.root / "upload_paused_until"
         try:
@@ -62,21 +77,29 @@ class AutoPoster:
             except Exception as e:  # noqa: BLE001 — never kill the live run
                 log.exception("[%s] auto-post failed for %s: %s", streamer, clip, e)
 
-    def rate_ok(self, now: float | None = None) -> bool:
+    def wait_reason(self, now: float | None = None) -> str | None:
+        """None = an upload is allowed right now; otherwise why not."""
         now = now or time.time()
-        while self.posted and now - self.posted[0] > 3600:
+        while self.posted and now - self.posted[0] > 86400:
             self.posted.popleft()
-        return len(self.posted) < self.max_per_hour
+        if now < self.paused_until:
+            return "YouTube daily upload limit (paused)"
+        if self.posted and now - self.posted[-1] < self.min_gap_s:
+            return f"spacing ({self.min_gap_s / 60:.0f} min between posts)"
+        if sum(now - t <= 3600 for t in self.posted) >= self.max_per_hour:
+            return f"rate limit ({self.max_per_hour}/hour)"
+        if len(self.posted) >= self.max_per_day:
+            return f"daily cap ({self.max_per_day}/24 h)"
+        return None
 
-    def decide(self, titles: dict, now: float | None = None) -> str | None:
-        """None = post it; otherwise the reason it goes to human review."""
+    def rate_ok(self, now: float | None = None) -> bool:
+        return self.wait_reason(now) is None
+
+    def decide(self, titles: dict) -> str | None:
+        """None = safe to post unattended; otherwise the reason it goes to human review."""
         risks = titles.get("autopost_risks")
         if risks is None or risks:
             return f"risk flagged: {', '.join(risks or ['unchecked'])}"
-        if (now or time.time()) < self.paused_until:
-            return "YouTube daily upload limit (paused; post later with `clipfarm post`)"
-        if not self.rate_ok(now):
-            return f"rate limit ({self.max_per_hour}/hour)"
         return None
 
     def _upload(self, item_id: str, streamer: str, title: str) -> dict:
@@ -97,36 +120,49 @@ class AutoPoster:
         log.error("[%s] upload failed (%s) — item in queue/failed/%s", streamer, yt.get("error"), item_id)
         return {"posted": False, "error": yt.get("error")}
 
-    def flush_backlog(self, skip: str | None = None) -> None:
-        """Post clips approved while uploads were paused or capped: best score first, within the hourly cap."""
-        for _, it in sorted(P.items(self.root, "approved"), key=lambda x: -(x[1].score or 0)):
-            if it.id == skip:
+    def post_next(self, now: float | None = None) -> dict | None:
+        """Upload the single best waiting highlight if the spacing/caps allow it right now."""
+        if self.wait_reason(now):
+            return None
+        waiting = sorted(P.items(self.root, "approved"), key=lambda x: (-(x[1].score or 0), x[1].created))
+        if not waiting:
+            return None
+        it = waiting[0][1]
+        log.info("[%s] ⏫ posting best of %d waiting (hype %s): %s", it.streamer, len(waiting), it.score, it.title)
+        out = self._upload(it.id, it.streamer, it.title)
+        with (self.root / "autopost.jsonl").open("a") as f:
+            f.write(json.dumps({"ts": time.time(), "streamer": it.streamer, "score": it.score, "id": it.id,
+                                "title": it.title, **out}, ensure_ascii=False) + "\n")
+        return out
+
+    async def run_poster(self, every_s: float = 60) -> None:
+        """Rolling poster for the live run: one upload at a time, best first, spaced out."""
+        while True:
+            await asyncio.sleep(every_s)
+            if self.wait_reason():
                 continue
-            if time.time() < self.paused_until or not self.rate_ok():
-                return
-            log.info("[%s] ⏫ posting backlog: %s", it.streamer, it.title)
-            self._upload(it.id, it.streamer, it.title)
+            async with self.lock:
+                try:
+                    await asyncio.to_thread(self.post_next)
+                except Exception as e:  # noqa: BLE001 — never kill the live run
+                    log.exception("rolling poster failed: %s", e)
 
     def process(self, clip: Path, streamer: str, score: int) -> dict:
         from .make import make
-        log.info("[%s] ⚡ score %d >= %d: editing for auto-post", streamer, score, self.min_score)
+        log.info("[%s] ⚡ hype %d >= %d: editing", streamer, score, self.min_score)
         r = make(clip, streamer, self.context, out_dir=clip.parent / "shorts")
         t = r["titles"]
         item = P.add(self.root, Path(r["short"]), t["youtube_titles"][0], streamer, self.pcfg,
                      score=score, source_clip=str(clip), titles=t)
         reason = self.decide(t)
         out = {"id": item.id, "title": item.title, "posted": False, "reason": reason}
-        waiting = bool(reason) and reason.startswith(("YouTube daily upload limit", "rate limit"))
-        if waiting:
-            P.move(self.root, item.id, "pending", "approved")  # passed the safety gate: post when allowed
-            log.info("[%s] ⏸ approved, waiting (%s): %s (%s)", streamer, reason, item.title, item.id)
-        elif reason:
+        if reason:
             log.info("[%s] 👀 needs review (%s): %s  -> clipfarm queue approve %s", streamer, reason, item.title, item.id)
         else:
-            P.move(self.root, item.id, "pending", "approved")
-            out.update(self._upload(item.id, streamer, item.title))
-        if not reason or waiting:
-            self.flush_backlog(skip=item.id)
+            P.move(self.root, item.id, "pending", "approved")  # the rolling poster picks the best one
+            n = len(P.items(self.root, "approved"))
+            log.info("[%s] ⏸ queued for posting (hype %d, %d waiting; %s): %s", streamer, score, n,
+                     self.wait_reason() or "next poster tick", item.title)
         with (self.root / "autopost.jsonl").open("a") as f:
             f.write(json.dumps({"ts": time.time(), "streamer": streamer, "score": score, **out}, ensure_ascii=False) + "\n")
         return out

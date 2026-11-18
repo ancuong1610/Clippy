@@ -87,7 +87,9 @@ when chat answers as one (35–60 % of chatters in the same mood: laughing, shoc
 clip and uploads it to YouTube without a human step. Clips skip auto-post and wait in `queue/pending/` when:
 - the AI flags a risk (copyrighted music, sexual content, hate, harassment, a minor on screen, or an unclear
   moment), or its safety answer is missing;
-- `auto_post_max_per_hour` (default 2) is reached.
+- (posting itself is rolling: every minute the run uploads the **best waiting highlight** if at least
+  `auto_post_min_gap_min` (20) minutes passed, under `auto_post_max_per_hour` (3) and `auto_post_max_per_day` (12,
+  rolling 24 h incl. manual uploads). YouTube doesn't publish safe numbers; steady spacing looks human.
 
 Every decision is logged to `queue/autopost.jsonl`. Comment out `auto_post_min_score` to turn it off.
 

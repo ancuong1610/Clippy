@@ -178,12 +178,17 @@ async def run(cfg: dict, test_trigger: float | None):
     from .autopost import AutoPoster
     ap = AutoPoster(cfg)
     if ap.enabled:
-        log.info("auto-post ON: score >= %s, max %d/hour, YouTube privacy %s", ap.min_score, ap.max_per_hour,
-                 ap.pcfg.get("youtube_privacy", "public"))
+        log.info("auto-post ON: hype >= %s, best first, >= %.0f min apart, max %d/hour, %d/24 h (%d in last 24 h), "
+                 "YouTube privacy %s", ap.min_score, ap.min_gap_s / 60, ap.max_per_hour, ap.max_per_day,
+                 len(ap.posted), ap.pcfg.get("youtube_privacy", "public"))
         if ap.paused_until > time.time():
             log.info("uploads paused until %s (YouTube daily limit); clips are edited and queued meanwhile",
                      datetime.fromtimestamp(ap.paused_until).strftime("%H:%M"))
     chans = [Channel(c, cfg, root, buffer_dir, ap if ap.enabled else None) for c in cfg["channel"]]
+    if ap.enabled:
+        tasks_extra = [ap.run_poster()]
+    else:
+        tasks_extra = []
     tasks = []
     for c in chans:
         tasks += [c.rec.run(), c.rec.janitor(), c.read_chat(), c.tick()]
@@ -195,7 +200,7 @@ async def run(cfg: dict, test_trigger: float | None):
                 await c.make_clip(HypeEvent(c.name, time.time(), 0, 0, 0, 0, 0))
         tasks.append(fake())
     log.info("watching: %s", ", ".join(f"{c.name}({c.platform})" for c in chans))
-    main_task = asyncio.gather(*tasks)
+    main_task = asyncio.gather(*tasks, *tasks_extra)
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):  # also works when started in background
         loop.add_signal_handler(sig, main_task.cancel)
