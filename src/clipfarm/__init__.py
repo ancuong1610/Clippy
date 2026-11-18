@@ -104,7 +104,11 @@ class Channel:
         await asyncio.sleep(max(0, t1 + self.segment_s + 3 - time.time()))  # let segments flush
         stamp = datetime.fromtimestamp(ev.ts).strftime("%Y%m%d-%H%M%S")
         tmp = self.out_dir / f"{stamp}.mp4"
-        chat = [f"{m.user}: {m.text}" for m in self.history if ev.ts - self.pre - 5 <= m.ts <= ev.ts + self.post]
+        window_msgs = [m for m in self.history if ev.ts - self.pre - 5 <= m.ts <= ev.ts + self.post]
+        chat = [f"{m.user}: {m.text}" for m in window_msgs]
+        # seconds from the clip's first frame (chat clock -> video clock via av_offset)
+        chat_timed = [{"t": round(m.ts - t0 + self.av_offset, 2), "user": m.user, "text": m.text}
+                      for m in window_msgs]
         video = await cut(self.rec.segments(), t0, t1, tmp, self.segment_s)
         ms = await asyncio.to_thread(moment_score, video, ev.ratio, ev.msgs, ev.hype_msgs,
                                      (max(0.0, self.pre - 25), self.pre + self.post))
@@ -114,7 +118,8 @@ class Channel:
         if video:
             video = video.rename(base.with_suffix(".mp4"))
         meta = {"event": asdict(ev), "score": ms.as_dict(), "video": str(video) if video else None,
-                "window": [t0, t1], "chat": chat, "label": await label(self.name, chat)}
+                "window": [t0, t1], "spike_at": round(ev.ts - t0, 2), "chat": chat, "chat_timed": chat_timed,
+                "label": await label(self.name, chat)}
         base.with_suffix(".json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
         with (self.out_dir.parent / "events.jsonl").open("a") as f:
             f.write(json.dumps({k: meta[k] for k in ("event", "score", "video", "label")}, ensure_ascii=False) + "\n")
@@ -205,6 +210,8 @@ def main() -> None:
     mk.add_argument("--layout", choices=["auto", "stack", "blur", "square"], default="auto")
     mk.add_argument("--captions", choices=["karaoke", "hormozi", "classic"], default="karaoke")
     mk.add_argument("--out", type=Path, default=None, help="output folder (default: next to the clip)")
+    mk.add_argument("--chat", choices=["auto", "on", "off"], default="auto",
+                    help="Twitch chat column: auto = only for score >= 70")
     ti = sub.add_parser("title", help="hooky titles/captions from transcript + chat (OpenRouter)")
     ti.add_argument("clip", type=Path)
     ti.add_argument("--streamer", default=None)
@@ -225,8 +232,9 @@ def main() -> None:
     if args.cmd == "make":
         from .make import make
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
-        r = make(args.clip, args.streamer, args.context, args.layout, args.captions, args.out)
-        print(json.dumps({k: r[k] for k in ("short", "thumbnails", "window", "layout", "facecam", "caption_fixes")},
+        r = make(args.clip, args.streamer, args.context, args.layout, args.captions, args.out, args.chat)
+        print(json.dumps({k: r[k] for k in ("short", "thumbnails", "window", "layout", "facecam", "caption_fixes",
+                                            "chat_overlay")},
                          indent=2, ensure_ascii=False))
         print("titles:", json.dumps(r["titles"].get("youtube_titles"), ensure_ascii=False))
         return

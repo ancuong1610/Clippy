@@ -33,6 +33,9 @@ Rules:
   "I MADE *FORTNITE*", "5 STARS IN *10 SECONDS*"), never a fragment like "BEFORE EVERYONE".
 - best_start/best_end: the tightest {min_len}-{max_len}s window that contains the setup AND the payoff.
   Start on the first word of a sentence, end right after the payoff/reaction. Seconds within 0-{duration:.0f}.
+- chat_highlights: up to 6 chat lines copied EXACTLY as "user: message" from the LIVE CHAT above, that best
+  show the crowd reacting to the payoff (funny, shocked, hype). NEVER pick slurs, hate, sexual content,
+  harassment of anyone, personal info, links, or spam walls. [] if chat is empty or nothing qualifies.
 - caption_fixes: speech-to-text mistakes in names/terms (streamers, games, slang) as [wrong, right] single
   words, e.g. [["fortnight","Fortnite"],["Automator","Automata"]]. Only clear mistakes; [] if none.
 
@@ -46,7 +49,8 @@ Return ONLY JSON:
   "what_happened": "<1 neutral sentence, for the human reviewer>",
   "best_start": <seconds>,
   "best_end": <seconds>,
-  "caption_fixes": [["wrong", "right"]]
+  "caption_fixes": [["wrong", "right"]],
+  "chat_highlights": ["user: message"]
 }}"""
 
 

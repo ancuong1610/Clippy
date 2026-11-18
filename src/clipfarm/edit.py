@@ -184,7 +184,7 @@ def _filter(layout: str, facecam: tuple[float, float, float, float] | None) -> t
 def make_short(src: Path, out: Path, title: str = "", layout: str = "blur",
                facecam: tuple[float, float, float, float] | None = None,
                model: str = WHISPER_MODEL, captions: str = "karaoke",
-               words_override: list[Word] | None = None) -> Path:
+               words_override: list[Word] | None = None, chat_events: list[dict] | None = None) -> Path:
     style = CAPTION_PRESETS[captions]
     dur = float(subprocess.check_output(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(src)]).strip())
@@ -199,30 +199,44 @@ def make_short(src: Path, out: Path, title: str = "", layout: str = "blur",
     log.info("%d caption words", len(words))
     base_filter, cap_y, title_y = _filter(layout, facecam)
 
-    # timeline of overlay states: (start, end, chunk, active_index)
-    states: list[tuple[float, float, list[Word] | None, int]] = []
+    # caption timeline: (start, end, chunk, active_index)
+    cap: list[tuple[float, float, list[Word] | None, int]] = []
     t = 0.0
     for ch in chunk(words, style.words_per_line):
         for i, w in enumerate(ch):
             s = max(w.start, t)
             e = ch[i + 1].start if i + 1 < len(ch) else w.end + 0.15
-            if s > t:
-                states.append((t, s, None, -1))
             if e > s:
-                states.append((s, e, ch, i))
+                cap.append((s, e, ch, i))
                 t = e
-    if t < dur:
-        states.append((t, dur, None, -1))
+    chat_events = chat_events or []
+    # merge caption + chat change points into one overlay timeline
+    cuts = sorted({0.0, dur, *[c[0] for c in cap], *[c[1] for c in cap],
+                   *[m["show"] for m in chat_events], *[m["hide"] for m in chat_events]})
+    cuts = [c for c in cuts if 0 <= c <= dur]
+    states = []
+    for s, e in zip(cuts, cuts[1:]):
+        if e - s < 0.001:
+            continue
+        mid = (s + e) / 2
+        cur = next((c for c in cap if c[0] <= mid < c[1]), None)
+        vis = tuple(i for i, m in enumerate(chat_events) if m["show"] <= mid < m["hide"])
+        states.append((s, e, cur[2] if cur else None, cur[3] if cur else -1, vis))
+    chat_box = (60, H - 560, W - 60, H - 150) if layout == "stack" else (60, H - 430, W - 60, H - 60)
 
     with tempfile.TemporaryDirectory() as tmp:
         tmpd = Path(tmp)
         cache: dict[tuple, Path] = {}
         lines = ["ffconcat version 1.0"]
-        for n, (s, e, ch, act) in enumerate(states):
-            key = (tuple(w.text for w in ch) if ch else (), act)
+        for n, (s, e, ch, act, vis) in enumerate(states):
+            key = (tuple(w.text for w in ch) if ch else (), act, vis)
             if key not in cache:
                 p = tmpd / f"o{len(cache):04d}.png"
-                render_overlay(title, ch, act, cap_y, title_y, style).save(p)
+                img = render_overlay(title, ch, act, cap_y, title_y, style)
+                if vis:
+                    from .chatoverlay import draw_chat
+                    draw_chat(img, [chat_events[i] for i in vis], chat_box)
+                img.save(p)
                 cache[key] = p
             lines += [f"file '{cache[key]}'", f"duration {max(e - s, 0.001):.3f}"]
         lines.append(f"file '{cache[key]}'")  # concat demuxer needs the last file repeated
