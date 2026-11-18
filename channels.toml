@@ -1,0 +1,59 @@
+# clipfarm config — edit channels, then: uv run clipfarm run
+output_dir = "clips"     # clips/<channel>/<time>_r<ratio>.mp4 + .json, clips/events.jsonl
+buffer_dir = "buffer"    # rolling 10s segments, auto-deleted after buffer_minutes
+
+[clip]
+pre_s = 30               # seconds BEFORE chat exploded (chat reacts late)
+post_s = 8               # seconds after
+segment_s = 10
+buffer_minutes = 15
+quality = "720p60,720p,best"  # 720p keeps 10 streams under ~45 Mbps; Shorts are 1080x1920 anyway
+chat_video_offset_s = 0  # +N if our video arrives N s later than chat (tune after first clips)
+
+[detector]               # defaults shown; can be overridden per channel with [channel.detector]
+ratio = 3.0              # chat must be >= 3x its own normal
+min_score = 8.0
+min_unique = 5
+cooldown_s = 45
+warmup_s = 60
+
+# ---- Approved 2026-11-18 ----
+[[channel]]
+name = "kaicenat"
+platform = "twitch"
+
+[[channel]]
+name = "ishowspeed"
+platform = "youtube"
+url = "https://www.youtube.com/@IShowSpeed/live"
+
+[[channel]]
+name = "xqc"
+platform = "twitch"
+
+# ---- Added: big audience + likely GTA 6 streams (remove any you don't want) ----
+[[channel]]
+name = "summit1g"          # GTA RP veteran
+platform = "twitch"
+
+[[channel]]
+name = "zackrawrr"         # Asmongold
+platform = "twitch"
+
+[[channel]]
+name = "caseoh_"
+platform = "twitch"
+
+[[channel]]
+name = "jynxzi"
+platform = "twitch"
+
+[[channel]]
+name = "plaqueboymax"
+platform = "twitch"
+
+[[channel]]
+name = "stableronaldo"
+platform = "twitch"
+
+# Not supported yet (Kick chat): adinross, n3on
