@@ -34,7 +34,7 @@ def shift_words(words: list[dict], start: float, end: float) -> list[Word]:
 
 def chat_events_for(meta: dict, titles: dict, start: float, end: float) -> list[dict]:
     """Timed chat lines for the trimmed clip (spread evenly if the clip predates timestamps)."""
-    from .chatoverlay import schedule, select
+    from .chatoverlay import CHAT_WINDOW_S, schedule, select
     timed = meta.get("chat_timed")
     has_ts = bool(timed)
     if not timed:  # old clips: "user: text" strings only
@@ -45,7 +45,7 @@ def chat_events_for(meta: dict, titles: dict, start: float, end: float) -> list[
         spike = meta["event"]["ts"] - meta["window"][0]
     dur = end - start
     spike_t = (spike if spike is not None else start + dur * 0.6) - start
-    spike_t = min(max(spike_t, 0.5), max(0.5, dur - 5.5))  # keep the chat burst inside the cut
+    spike_t = min(max(spike_t, 1.5), max(1.5, dur - CHAT_WINDOW_S + 1))  # keep ~8 s of chat inside the cut
     shifted = [{**m, "t": m["t"] - start} for m in timed] if has_ts else [{**m, "t": spike_t} for m in timed]
     msgs = select(shifted, titles.get("chat_highlights"), spike_t)
     return schedule(msgs, spike_t, dur, has_timestamps=has_ts)

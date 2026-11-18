@@ -68,23 +68,29 @@ def select(chat_timed: list[dict], picks: list[str] | None, spike_t: float, n: i
     return [{**m, "text": clean(m["text"])} for m in chosen]
 
 
-def schedule(msgs: list[dict], spike_t: float, duration: float, window: float = 5.5,
-             has_timestamps: bool = True) -> list[dict]:
-    """Assign on-screen times inside [spike_t, spike_t+window] (real times when we have them)."""
+CHAT_LEAD_S = 1.0     # chat starts just before the payoff peaks
+CHAT_WINDOW_S = 9.0   # how long the burst keeps building after the spike
+CHAT_GAP_S = 0.8      # min time between two new lines (readability)
+
+
+def schedule(msgs: list[dict], spike_t: float, duration: float, window: float = CHAT_WINDOW_S,
+             has_timestamps: bool = True, lead: float = CHAT_LEAD_S, gap: float = CHAT_GAP_S) -> list[dict]:
+    """Assign on-screen times inside [spike_t-lead, spike_t+window] (real times when we have them).
+    Lines stay up until the clip ends (or 1.5 s after the window)."""
     if not msgs:
         return []
-    start, end = max(0.0, spike_t + 0.2), min(duration - 0.2, spike_t + window)
+    start, end = max(0.0, spike_t - lead), min(duration - 0.2, spike_t + window)
     if end <= start:
         return []
     if has_timestamps:
         ts = [min(max(m["t"], start), end - 0.3) for m in msgs]
-        # keep them at least 0.45 s apart so each line is readable
+        # keep them at least `gap` apart so each line is readable
         for i in range(1, len(ts)):
-            ts[i] = max(ts[i], ts[i - 1] + 0.45)
+            ts[i] = max(ts[i], ts[i - 1] + gap)
     else:
         step = (end - start - 0.4) / max(1, len(msgs))
         ts = [start + i * step for i in range(len(msgs))]
-    hide = round(min(duration, end + 0.8), 2)
+    hide = round(min(duration, end + 1.5), 2)
     return [{**m, "show": round(t, 2), "hide": hide} for m, t in zip(msgs, ts) if t < end]
 
 

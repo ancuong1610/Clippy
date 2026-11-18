@@ -29,9 +29,10 @@ def test_select_prefers_ai_picks_matched_to_real_messages():
 def test_schedule_spacing_and_window():
     msgs = [{"t": 10.0, "user": "a", "text": "x"}, {"t": 10.1, "user": "b", "text": "y"}]
     ev = schedule(msgs, spike_t=10, duration=30)
-    assert ev[1]["show"] - ev[0]["show"] >= 0.45 and all(e["hide"] > e["show"] for e in ev)
+    assert ev[1]["show"] - ev[0]["show"] >= 0.8 and all(e["hide"] > e["show"] for e in ev)
     ev2 = schedule(msgs, spike_t=10, duration=30, has_timestamps=False)
-    assert 10 <= ev2[0]["show"] < ev2[1]["show"] <= 15.5
+    assert 9 <= ev2[0]["show"] < ev2[1]["show"] <= 19
+    assert ev2[-1]["hide"] - ev2[0]["show"] >= 8  # long enough to read
 
 
 def test_draw_chat_draws_inside_box():
