@@ -91,7 +91,12 @@ clip and uploads it to YouTube without a human step. Clips skip auto-post and wa
   `auto_post_min_gap_min` (20) minutes passed, under `auto_post_max_per_hour` (3) and `auto_post_max_per_day` (12,
   rolling 24 h incl. manual uploads). YouTube doesn't publish safe numbers; steady spacing looks human.
 
+Uploads happen only inside `auto_post_window` (e.g. `"00:30-03:30"` Berlin = US evening), each after a random
+0–`auto_post_jitter_min` minute wait, so posting never runs on a fixed clock.
+
 Every decision is logged to `queue/autopost.jsonl`. Comment out `auto_post_min_score` to turn it off.
+`clipfarm post --watch` runs only the poster (no clipping); `clipfarm stats` prints views and likes per posted
+Short and appends them to `queue/stats.jsonl`.
 
 Clips land in `clips/<channel>/<time>_s<score>.mp4` with a `.json` holding the chat, score and spike time.
 Clips scoring below `min_score` go to `clips/<channel>/low/`.

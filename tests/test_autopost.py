@@ -119,3 +119,28 @@ def test_one_clip_per_scene(tmp_path):
     bank = {"xqc 20261118-181600", "xqc 20261118-181650", "xqc 20261118-181746"}
     assert len(left & bank) == 1
     assert "xqc 20261118-181600" not in left  # the 90 lost to the 97s
+
+
+def test_window_and_jitter():
+    import time as _t
+    from clipfarm.autopost import in_window, parse_window
+    assert parse_window("00:30-03:30") == (30, 210)
+    t = _t.mktime((2026, 11, 20, 1, 0, 0, 0, 0, -1))
+    assert in_window((30, 210), t) and not in_window((30, 210), t + 3 * 3600)
+    assert in_window(parse_window("22:00-02:00"), t)  # crosses midnight
+    ap = AutoPoster({"post": {"auto_post_min_score": 90, "auto_post_window": "00:30-03:30",
+                              "auto_post_jitter_min": 60, "queue_dir": "/nonexistent"}})
+    ap.posted.clear()
+    assert "outside posting window" in ap.wait_reason(now=t + 3 * 3600)
+    r = ap.wait_reason(now=t)
+    assert r is None or "random delay" in r
+    assert ap.wait_reason(now=t + 3600 + 1) is None  # jitter is at most 60 min
+
+
+def test_youtube_tags_include_streamer():
+    from clipfarm.post import PostItem, youtube_args
+    it = PostItem(id="x", title="t", streamer="xQc", platforms=["youtube"], tags=["GTA6", "xQc"],
+                  youtube_description="desc")
+    a = youtube_args(it, {})
+    assert "xQc GTA 6" in a["tags"] and len(a["tags"]) == len(set(a["tags"]))
+    assert a["description"].endswith("#GTA6 #xQc #Shorts")

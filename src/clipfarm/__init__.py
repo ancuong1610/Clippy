@@ -288,6 +288,10 @@ def main() -> None:
     q.add_argument("--config", default="channels.toml", type=Path)
     po = sub.add_parser("post", help="post everything in queue/approved (YouTube via Composio)")
     po.add_argument("--dry-run", action="store_true", help="show what would be sent, send nothing")
+    po.add_argument("--watch", action="store_true",
+                    help="poster only: keep running, upload the best approved Short when [post] spacing/window allow")
+    st = sub.add_parser("stats", help="views/likes/comments of every posted Short (saved to queue/stats.jsonl)")
+    st.add_argument("--config", default="channels.toml", type=Path)
     po.add_argument("--config", default="channels.toml", type=Path)
     args = ap.parse_args()
     if args.cmd == "make":
@@ -303,10 +307,27 @@ def main() -> None:
         from .titles import make_titles
         print(json.dumps(make_titles(args.clip, args.streamer, args.context), indent=2, ensure_ascii=False))
         return
+    if args.cmd == "stats":
+        from . import post as P
+        pcfg = load_config(args.config).get("post", {})
+        rows = P.fetch_stats(Path(pcfg.get("queue_dir", "queue")), pcfg)
+        print(f"{len(rows)} Shorts, {sum(r['view'] for r in rows)} views")
+        for r in rows:
+            print(f"{r['view']:>7} views {r['like']:>4} likes  hype {r['score'] or '-':>3}  {r['streamer']:13} {r['title']}")
+        return
     if args.cmd in ("queue", "post"):
         from . import post as P
         pcfg = load_config(args.config).get("post", {})
         root = Path(pcfg.get("queue_dir", "queue"))
+        if args.cmd == "post" and args.watch:
+            from .autopost import AutoPoster
+            logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+            ap_ = AutoPoster(load_config(args.config))
+            log.info("poster only: window %s, gap %.0f min, %d/h, %d/24 h, +0..%.0f min random; now: %s",
+                     pcfg.get("auto_post_window", "any time"), ap_.min_gap_s / 60, ap_.max_per_hour, ap_.max_per_day,
+                     ap_.jitter_s / 60, ap_.wait_reason() or "ready")
+            asyncio.run(ap_.run_poster())
+            return
         if args.cmd == "post":
             for r in P.post_all(root, pcfg, args.dry_run):
                 print(json.dumps(r, ensure_ascii=False, indent=2))

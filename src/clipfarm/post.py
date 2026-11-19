@@ -128,9 +128,12 @@ AUTO_PLATFORMS = {"youtube"}  # posted automatically; the rest get a manual capt
 
 def youtube_args(item: PostItem, cfg: dict) -> dict:
     desc = item.youtube_description or caption_for(item, cfg)
-    if item.youtube_description and "#" not in desc:
-        desc += "\n" + " ".join("#" + t.lstrip("#") for t in item.tags)
-    return {"title": item.title, "description": desc[:5000], "tags": item.tags,
+    s = item.streamer
+    if item.youtube_description and "#" not in desc:  # 3 hashtags: game, streamer, shorts
+        desc += f"\n#GTA6 #{s.replace(' ', '')} #Shorts"
+    tags = list(dict.fromkeys([*item.tags, f"{s} GTA 6", f"{s} clips", f"{s} highlights", "GTA 6", "GTA VI",
+                               "GTA 6 gameplay", "GTA 6 funny moments"]))
+    return {"title": item.title, "description": desc[:5000], "tags": tags,
             "categoryId": cfg.get("youtube_category", "20"),
             "privacyStatus": cfg.get("youtube_privacy", "public")}
 
@@ -189,6 +192,34 @@ def post_composio(root: Path, cfg: dict, dry_run: bool = False, only: str | None
             time.sleep(2)
         results.append(res)
     return results
+
+
+def fetch_stats(root: Path, cfg: dict) -> list[dict]:
+    """Views / likes / comments of every posted Short (YouTube via Composio); appended to queue/stats.jsonl."""
+    if not os.getenv("COMPOSIO_API_KEY"):
+        raise SystemExit("COMPOSIO_API_KEY missing — put it in .env")
+    from composio import Composio
+    c = Composio(api_key=os.environ["COMPOSIO_API_KEY"])
+    posted = {}
+    for d, item in items(root, "posted"):
+        r = json.loads((d / "result.json").read_text()) if (d / "result.json").exists() else {}
+        vid = (r.get("platforms", {}).get("youtube") or {}).get("video_id")
+        if vid:
+            posted[vid] = item
+    rows, ids, now = [], list(posted), time.time()
+    for i in range(0, len(ids), 50):
+        r = c.tools.execute("YOUTUBE_GET_VIDEO_DETAILS_BATCH", {"id": ids[i:i + 50], "parts": ["statistics", "snippet"]},
+                            user_id=cfg.get("composio_user", COMPOSIO_USER), dangerously_skip_version_check=True)
+        r = r if isinstance(r, dict) else r.model_dump()
+        for v in (r.get("data") or {}).get("items") or []:
+            st, it = v.get("statistics", {}), posted[v["id"]]
+            rows.append({"ts": now, "video_id": v["id"], "id": it.id, "streamer": it.streamer, "score": it.score,
+                         "published": v.get("snippet", {}).get("publishedAt"), "title": it.title,
+                         **{k: int(st.get(k + "Count", 0)) for k in ("view", "like", "comment")}})
+    with (root / "stats.jsonl").open("a") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return sorted(rows, key=lambda r: -r["view"])
 
 
 def post_all(root: Path, cfg: dict, dry_run: bool = False) -> list[dict]:

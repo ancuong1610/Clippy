@@ -85,7 +85,10 @@ context = "GTA 6 launch stream"         # tells the AI what the stream is about 
 # unless the AI flags a risk (music, sexual, hate, off-topic, ...) or the hourly limit is reached: those wait in
 # queue/pending/ for `clipfarm queue approve`. Log: queue/autopost.jsonl. Comment out to turn off.
 auto_post_min_score = 90            # = judge hype (0-100) when [judge] is on
-auto_post_max_per_hour = 3
-auto_post_min_gap_min = 20              # rolling: one upload at a time, best waiting highlight first
+auto_post_max_per_hour = 1
+auto_post_min_gap_min = 60              # rolling: one upload at a time, best waiting highlight first
 auto_post_scene_min = 3                 # one clip per scene: same streamer within 3 min -> only the best
-auto_post_max_per_day = 12              # rolling 24 h incl. manual uploads; YouTube's own limit is unpublished
+auto_post_max_per_day = 1               # 1/day until ~25k views/day, then 3/day (clip-channel rule of thumb)
+auto_post_window = "00:30-03:30"        # Berlin time = US evening, when these streamers' viewers are on
+auto_post_jitter_min = 90               # random 0-90 min extra wait per upload: no fixed clock, no bot pattern
+# rolling 24 h incl. manual uploads; YouTube's own limit is unpublished

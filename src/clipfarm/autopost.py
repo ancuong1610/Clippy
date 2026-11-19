@@ -6,6 +6,8 @@
 Posting looks human, not like a bot: at least `auto_post_min_gap_min` between uploads, at most
 `auto_post_max_per_hour` and `auto_post_max_per_day` (rolling, counting every upload incl. manual ones),
 and a 6 h pause when YouTube reports the channel's daily upload limit.
+To not look like a bot: uploads only inside `auto_post_window` (local time, e.g. "00:30-03:30" = US evening) and
+each one waits a random extra 0..`auto_post_jitter_min` minutes, so posts never land on a fixed clock.
 Clips the AI flags (music, sexual, hate, off-topic, ...) land in queue/pending/ for a human.
 One clip is edited at a time so two streams spiking together don't overload the machine.
 """
@@ -15,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import re
 import time
 from collections import deque
@@ -27,7 +30,8 @@ log = logging.getLogger("clipfarm")
 
 def is_upload_limit(error) -> bool:
     e = str(error or "").lower()
-    return "upload limit" in e or "exceeded the number of videos" in e or "uploadlimitexceeded" in e
+    return ("upload limit" in e or "exceeded the number of videos" in e or "uploadlimitexceeded" in e
+            or "video uploads per day" in e or "quotaexceeded" in e or "quota exceeded" in e)
 
 
 _STAMP = re.compile(r"(\d{8}-\d{6})")
@@ -39,6 +43,23 @@ def moment_ts(item) -> float | None:
     if not m:
         return None
     return time.mktime(time.strptime(m.group(1), "%Y%m%d-%H%M%S"))
+
+
+def parse_window(spec: str | None) -> tuple[int, int] | None:
+    """"00:30-03:30" -> (30, 210) minutes after midnight; may cross midnight ("22:00-02:00")."""
+    if not spec:
+        return None
+    a, b = (int(h) * 60 + int(m) for h, m in (x.strip().split(":") for x in spec.split("-")))
+    return a, b
+
+
+def in_window(window: tuple[int, int] | None, now: float) -> bool:
+    if not window:
+        return True
+    t = time.localtime(now)
+    m = t.tm_hour * 60 + t.tm_min
+    a, b = window
+    return a <= m < b if a <= b else (m >= a or m < b)
 
 
 def recent_posts(root: Path, within_s: float = 86400) -> list[float]:
@@ -71,6 +92,9 @@ class AutoPoster:
         except (OSError, ValueError):
             self.paused_until = 0.0
         self.tasks: set[asyncio.Task] = set()
+        self.window = parse_window(self.pcfg.get("auto_post_window"))
+        self.jitter_s = float(self.pcfg.get("auto_post_jitter_min", 0)) * 60
+        self.next_at: float | None = None  # random earliest time for the next upload
 
     @property
     def enabled(self) -> bool:
@@ -97,12 +121,18 @@ class AutoPoster:
             self.posted.popleft()
         if now < self.paused_until:
             return "YouTube daily upload limit (paused)"
+        if not in_window(self.window, now):
+            return f"outside posting window ({self.pcfg.get('auto_post_window')})"
         if self.posted and now - self.posted[-1] < self.min_gap_s:
             return f"spacing ({self.min_gap_s / 60:.0f} min between posts)"
         if sum(now - t <= 3600 for t in self.posted) >= self.max_per_hour:
             return f"rate limit ({self.max_per_hour}/hour)"
         if len(self.posted) >= self.max_per_day:
             return f"daily cap ({self.max_per_day}/24 h)"
+        if self.next_at is None:  # allowed now: pick a random moment within the jitter, then post
+            self.next_at = now + random.uniform(0, self.jitter_s)
+        if now < self.next_at:
+            return f"random delay until {time.strftime('%H:%M', time.localtime(self.next_at))}"
         return None
 
     def rate_ok(self, now: float | None = None) -> bool:
@@ -124,6 +154,7 @@ class AutoPoster:
         yt = res["platforms"].get("youtube", {})
         if yt.get("ok"):
             self.posted.append(time.time())
+            self.next_at = None
             log.info("[%s] 🚀 posted: %s  %s", streamer, title, yt.get("url"))
             return {"posted": True, "url": yt.get("url")}
         if is_upload_limit(yt.get("error")):
