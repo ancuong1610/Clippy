@@ -73,6 +73,22 @@ def test_composio_dry_run_youtube_auto_others_manual(tmp_path, video):
     assert (d / "manual_tiktok.txt").read_text().startswith("xQc made Fortnite??")
 
 
+def test_dry_run_instagram_and_tiktok_draft_when_auto(tmp_path, video):
+    root = tmp_path / "q"
+    cfg = {**CFG, "auto_platforms": ["youtube", "instagram", "tiktok"], "social": {"handle_tiktok": "@me"}}
+    it = P.add(root, video, "xQc Loses To A COW", "xqc", cfg, titles={"tiktok_caption": "the cow wins #xqc"})
+    P.move(root, it.id, "pending", "approved")
+    out = P.post_composio(root, cfg, dry_run=True)[0]
+    assert set(out["platforms"]) == {"youtube", "instagram", "tiktok"} and "manual" not in out
+    cap = out["platforms"]["tiktok"]["caption"]
+    assert cap.startswith("the cow wins") and "@me" in cap and "#gta6" in cap
+
+
+def test_notify_needs_a_topic(monkeypatch):
+    monkeypatch.delenv("NTFY_TOPIC", raising=False)
+    assert P.notify({}, "t", "b") is False
+
+
 def test_titles_validate():
     from clipfarm.titles import build_prompt, validate
     t = validate({"youtube_titles": ["a" * 150, " b ", ""], "thumbnail_text": "he got *caught* today ok"})

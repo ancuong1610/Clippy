@@ -85,6 +85,9 @@ description = "GTA 6 launch stream highlights"
 tags = ["GTA6", "GTA", "Shorts"]
 credit_template = "🎥 {streamer} — full stream on their channel"
 youtube_privacy = "public"
+# Platforms the poster handles itself (owner 2026-11-21). instagram = Reel with caption, public at once;
+# tiktok = draft in the TikTok app's inbox (app not audited -> no direct post); the caption goes to ntfy (NTFY_TOPIC in .env).
+auto_platforms = ["youtube", "instagram", "tiktok"]
 # tiktok_privacy = "PUBLIC_TO_EVERYONE"
 context = "GTA 6 launch stream"         # tells the AI what the stream is about (titles, hook)
 # ---- Auto-post during `clipfarm run` (approved 2026-11-18 for the GTA 6 launch) ----
@@ -116,7 +119,7 @@ raw_days = 2            # raw clips that never made the queue
 # ---- TikTok / Instagram copy-paste captions (posted by hand for now) ----
 [post.social]
 follow_line = "Follow for daily GTA 6 streamer clips"
-handle_tiktok = "@viral_streamhighlight"     # assumed same handle; change if TikTok gives a different one
+handle_tiktok = "@cathevuottroi1610"         # the TikTok account connected in Composio (2026-11-21)
 handle_instagram = "@viral_streamhighlight"
 reach_tag_tiktok = "#fyp"
 reach_tag_instagram = "#gaming"

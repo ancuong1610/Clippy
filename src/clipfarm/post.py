@@ -1,4 +1,5 @@
-"""Posting queue -> YouTube Shorts via Composio; TikTok / Instagram get ready-to-paste caption files.
+"""Posting queue -> YouTube Shorts + Instagram Reels via Composio; TikTok gets a draft in the app's inbox
+(TikTok only allows direct posting for audited apps), and the caption is pushed to the owner's phone (ntfy).
 
   queue/pending/<id>/   short.mp4 + post.json   (added by `clipfarm queue add`)
   queue/approved/<id>/  human said yes          (`clipfarm queue approve <id>`)
@@ -132,7 +133,75 @@ def move(root: Path, item_id: str, src: str, dst: str) -> Path:
 
 
 COMPOSIO_USER = "stream-chaos-clips"
-AUTO_PLATFORMS = {"youtube"}  # posted automatically; the rest get a manual caption pack
+AUTO_PLATFORMS = {"youtube"}  # default; [post] auto_platforms = ["youtube", "instagram", "tiktok"] adds the others
+
+
+def auto_platforms(cfg: dict) -> set[str]:
+    return set(cfg.get("auto_platforms", AUTO_PLATFORMS))
+
+
+def _run(c, slug: str, args: dict, cfg: dict) -> dict:
+    r = c.tools.execute(slug, args, user_id=cfg.get("composio_user", COMPOSIO_USER), dangerously_skip_version_check=True)
+    return r if isinstance(r, dict) else r.model_dump()
+
+
+def _data(r: dict) -> dict:
+    d = r.get("data") or {}
+    return d.get("data") if isinstance(d.get("data"), dict) else d
+
+
+def post_instagram(c, d: Path, item: PostItem, cfg: dict) -> dict:
+    """Reel with caption, public at once: container (Composio hosts the file for Meta to fetch) -> publish."""
+    from composio.core.models._files import FileUploadable
+    fu = FileUploadable.from_path(c.client, str(d / "short.mp4"), tool="INSTAGRAM_POST_IG_USER_MEDIA",
+                                  toolkit="instagram", file_upload_allowlist=[d])
+    me = _data(_run(c, "INSTAGRAM_GET_USER_INFO", {}, cfg)).get("id")
+    r = _run(c, "INSTAGRAM_POST_IG_USER_MEDIA", {"ig_user_id": me, "video_file": fu.model_dump(), "media_type": "REELS",
+                                                 "share_to_feed": True, "caption": social_caption(item, "instagram", cfg)},
+             cfg)
+    cid = _data(r).get("id")
+    if not cid:
+        return {"ok": False, "error": r.get("error") or r.get("data")}
+    r = _run(c, "INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH", {"ig_user_id": me, "creation_id": cid, "max_wait_seconds": 240},
+             cfg)
+    mid = _data(r).get("id")
+    return {"ok": bool(r.get("successful") and mid), "media_id": mid, "error": r.get("error")}
+
+
+def post_tiktok_draft(c, d: Path, item: PostItem, cfg: dict, wait_s: int = 120) -> dict:
+    """Video -> the TikTok app's inbox (draft); the owner adds the caption (sent to the phone) and taps Post."""
+    from composio.core.models._files import FileUploadable
+    fu = FileUploadable.from_path(c.client, str(d / "short.mp4"), tool="TIKTOK_UPLOAD_VIDEO", toolkit="tiktok",
+                                  file_upload_allowlist=[d])
+    r = _run(c, "TIKTOK_UPLOAD_VIDEO", {"file_to_upload": fu.model_dump(), "publish": False}, cfg)
+    pid = _data(r).get("publish_id")
+    if not pid:
+        return {"ok": False, "error": r.get("error") or r.get("data")}
+    status = None
+    for _ in range(max(1, wait_s // 10)):
+        time.sleep(10)
+        status = _data(_run(c, "TIKTOK_FETCH_PUBLISH_STATUS", {"publish_id": pid}, cfg)).get("status")
+        if status in ("SEND_TO_USER_INBOX", "PUBLISH_COMPLETE", "FAILED"):
+            break
+    ok = status in ("SEND_TO_USER_INBOX", "PUBLISH_COMPLETE")
+    if ok:
+        notify(cfg, f"TikTok draft: {item.title}", social_caption(item, "tiktok", cfg))
+    return {"ok": ok, "draft": True, "publish_id": pid, "status": status}
+
+
+def notify(cfg: dict, title: str, body: str) -> bool:
+    """Push to the owner's phone via ntfy.sh (NTFY_TOPIC in .env; the ntfy app subscribes to that topic).
+    Only captions go there (public anyway once posted) — never anything private."""
+    topic = cfg.get("ntfy_topic") or os.getenv("NTFY_TOPIC")
+    if not topic:
+        return False
+    import httpx
+    try:
+        httpx.post(f"https://ntfy.sh/{topic}", content=body.encode(),
+                   headers={"Title": title.encode("utf-8").decode("latin-1", "ignore"), "Tags": "clapper"}, timeout=15)
+        return True
+    except httpx.HTTPError:
+        return False
 
 
 def youtube_args(item: PostItem, cfg: dict) -> dict:
@@ -192,7 +261,8 @@ def manual_pack(d: Path, item: PostItem, cfg: dict, platforms: list[str]) -> lis
 
 
 def post_composio(root: Path, cfg: dict, dry_run: bool = False, only: str | None = None) -> list[dict]:
-    """YouTube via Composio (free; verified public uploads 2026-11-18). Other platforms -> manual pack."""
+    """YouTube (+ Instagram, TikTok draft when listed in auto_platforms) via Composio. Others -> manual pack.
+    An item moves to posted/ once any platform worked (never re-posted); failed platforms get a manual pack."""
     c = None
     if not dry_run:
         if not os.getenv("COMPOSIO_API_KEY"):
@@ -204,7 +274,7 @@ def post_composio(root: Path, cfg: dict, dry_run: bool = False, only: str | None
     for d, item in items(root, "approved"):
         if only and item.id != only:
             continue
-        manual = [p for p in item.platforms if p not in AUTO_PLATFORMS]
+        manual = [p for p in item.platforms if p not in auto_platforms(cfg)]
         res: dict = {"id": item.id, "platforms": {}}
         if "youtube" in item.platforms:
             args = youtube_args(item, cfg)
@@ -224,10 +294,22 @@ def post_composio(root: Path, cfg: dict, dry_run: bool = False, only: str | None
                                                    "error": r.get("error")}
                 except Exception as e:  # noqa: BLE001
                     res["platforms"]["youtube"] = {"ok": False, "error": str(e)}
+        for p, fn in (("instagram", post_instagram), ("tiktok", post_tiktok_draft)):
+            if p not in item.platforms or p not in auto_platforms(cfg):
+                continue
+            if dry_run:
+                res["platforms"][p] = {"dry_run": True, "caption": social_caption(item, p, cfg)}
+                continue
+            try:
+                res["platforms"][p] = fn(c, d, item, cfg)
+            except Exception as e:  # noqa: BLE001 — one platform failing must not stop the others
+                res["platforms"][p] = {"ok": False, "error": str(e)}
+            if not res["platforms"][p].get("ok"):
+                manual.append(p)
         if manual:
             res["manual"] = manual if dry_run else manual_pack(d, item, cfg, manual)
         if not dry_run:
-            ok = all(v.get("ok") for v in res["platforms"].values())
+            ok = any(v.get("ok") for v in res["platforms"].values())
             dest = move(root, item.id, "approved", "posted" if ok else "failed")
             (dest / "result.json").write_text(json.dumps(res, indent=2, ensure_ascii=False))
             time.sleep(2)

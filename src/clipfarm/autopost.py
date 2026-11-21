@@ -172,11 +172,12 @@ class AutoPoster:
         """Upload one approved item. On YouTube's daily limit: pause (persisted) and keep it in approved/."""
         res = P.post_composio(self.root, self.pcfg, only=item_id)[0]
         yt = res["platforms"].get("youtube", {})
-        if yt.get("ok"):
+        done = {p: v for p, v in res["platforms"].items() if v.get("ok")}
+        if done:  # item is in posted/ now; a failed platform got a manual caption pack
             self.posted.append(time.time())
             self.next_at = None
-            log.info("[%s] 🚀 posted: %s  %s", streamer, title, yt.get("url"))
-            return {"posted": True, "url": yt.get("url")}
+            log.info("[%s] 🚀 posted (%s): %s  %s", streamer, ", ".join(done), title, yt.get("url") or "")
+            return {"posted": True, "url": yt.get("url"), "platforms": list(done)}
         if is_upload_limit(yt.get("error")):
             self.paused_until = time.time() + 6 * 3600  # YouTube's window is a rolling 24 h; retry in 6 h
             self.pause_file.write_text(str(self.paused_until))
