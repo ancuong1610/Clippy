@@ -104,6 +104,15 @@ auto_post_slot_min = 60
 auto_post_jitter_min = 3                # small random wait so posts are not on an exact clock
 # rolling 24 h incl. manual uploads; YouTube's own limit is unpublished
 
+# ---- Disk cleanup (`clipfarm cleanup` lists, `--apply` deletes; auto = hourly inside `post --watch`) ----
+# Deletes the video of posted clips (after the manual TikTok/IG window) and of clips that will never be posted;
+# source clips the owner saw are shrunk to 640 px (judge backtests still work). All .json files stay.
+[cleanup]
+auto = true             # owner 2026-11-21: on (runs hourly inside `clipfarm post --watch`)
+posted_days = 3         # keep posted Shorts this long for the manual TikTok / Instagram upload
+skipped_days = 1
+raw_days = 2            # raw clips that never made the queue
+
 # ---- TikTok / Instagram copy-paste captions (posted by hand for now) ----
 [post.social]
 follow_line = "Follow for daily GTA 6 streamer clips"

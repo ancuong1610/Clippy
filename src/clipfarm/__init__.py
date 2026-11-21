@@ -295,6 +295,9 @@ def main() -> None:
     po.add_argument("--dry-run", action="store_true", help="show what would be sent, send nothing")
     po.add_argument("--watch", action="store_true",
                     help="poster only: keep running, upload the best approved Short when [post] spacing/window allow")
+    cl = sub.add_parser("cleanup", help="free disk: drop videos of posted / skipped / never-queued clips (dry run)")
+    cl.add_argument("--apply", action="store_true", help="really delete / shrink (default: only list)")
+    cl.add_argument("--config", default="channels.toml", type=Path)
     st = sub.add_parser("stats", help="views/likes/comments of every posted Short (saved to queue/stats.jsonl)")
     st.add_argument("--config", default="channels.toml", type=Path)
     po.add_argument("--config", default="channels.toml", type=Path)
@@ -311,6 +314,15 @@ def main() -> None:
     if args.cmd == "title":
         from .titles import make_titles
         print(json.dumps(make_titles(args.clip, args.streamer, args.context), indent=2, ensure_ascii=False))
+        return
+    if args.cmd == "cleanup":
+        from .cleanup import run as cleanup
+        acts, freed = cleanup(load_config(args.config), args.apply)
+        for x in acts:
+            print(f"{x.kind:6} {x.size / 1e6:7.1f} MB  {x.why:28} {x.path}")
+        mb = sum(x.size for x in acts if x.kind == "delete") / 1e6
+        print(f"{len(acts)} files" + (f", freed {freed / 1e9:.2f} GB" if args.apply
+                                      else f", ~{mb / 1e3:.2f} GB to delete + shrinks. Dry run: add --apply"))
         return
     if args.cmd == "stats":
         from . import post as P
