@@ -107,8 +107,8 @@ auto_post_jitter_min = 3                # small random wait so posts are not on 
 # ---- TikTok / Instagram copy-paste captions (posted by hand for now) ----
 [post.social]
 follow_line = "Follow for daily GTA 6 streamer clips"
-handle_tiktok = ""                      # e.g. "@streamchaosclips" once the TikTok account exists
-handle_instagram = ""
+handle_tiktok = "@viral_streamhighlight"     # assumed same handle; change if TikTok gives a different one
+handle_instagram = "@viral_streamhighlight"
 reach_tag_tiktok = "#fyp"
 reach_tag_instagram = "#gaming"
 mood_tag = "#funny"
