@@ -25,7 +25,11 @@ min_unique = 5
 cooldown_s = 45
 warmup_s = 60
 
-# ---- Approved 2026-11-18 ----
+# ---- CORE: the biggest, most clippable streamers. Clipped all the time; these grow the channel. ----
+[[channel]]
+name = "xqc"
+platform = "twitch"
+
 [[channel]]
 name = "kaicenat"
 platform = "twitch"
@@ -36,16 +40,7 @@ platform = "youtube"
 url = "https://www.youtube.com/@IShowSpeed/live"
 
 [[channel]]
-name = "xqc"
-platform = "twitch"
-
-# ---- Added: big audience + likely GTA 6 streams (remove any you don't want) ----
-[[channel]]
-name = "summit1g"          # GTA RP veteran
-platform = "twitch"
-
-[[channel]]
-name = "zackrawrr"         # Asmongold
+name = "ohnepixel"                 # English-speaking, based in Germany; clipped only while he plays GTA 6
 platform = "twitch"
 
 [[channel]]
@@ -57,12 +52,24 @@ name = "jynxzi"
 platform = "twitch"
 
 [[channel]]
-name = "plaqueboymax"
+name = "zackrawrr"                 # Asmongold
 platform = "twitch"
 
 [[channel]]
-name = "stableronaldo"
+name = "stableronaldo"             # most 90+ highlights during the GTA 6 launch
 platform = "twitch"
+
+# ---- CAMPAIGN track: watched only while a paid campaign for them is open (`until` = last day, YYYY-MM-DD).
+# When the campaign ends, the run skips them by itself; delete the entry later. Check end dates on Content Rewards.
+[[channel]]
+name = "lacy"                      # Reach: $12,500 LACY GTA VI Marathon Pool (launched 2026-11-18)
+platform = "twitch"
+until = "2026-12-05"
+
+[[channel]]
+name = "clix"                      # Reach: $5,000 Clix GTA VI Marathon Pool + $4,000 Clix x JBL
+platform = "twitch"
+until = "2026-12-05"
 
 # Not supported yet (Kick chat): adinross, n3on
 
@@ -85,10 +92,39 @@ context = "GTA 6 launch stream"         # tells the AI what the stream is about 
 # unless the AI flags a risk (music, sexual, hate, off-topic, ...) or the hourly limit is reached: those wait in
 # queue/pending/ for `clipfarm queue approve`. Log: queue/autopost.jsonl. Comment out to turn off.
 auto_post_min_score = 90            # = judge hype (0-100) when [judge] is on
-auto_post_max_per_hour = 1
-auto_post_min_gap_min = 60              # rolling: one upload at a time, best waiting highlight first
+auto_post_max_per_hour = 6
+auto_post_min_gap_min = 10               # owner: post the day's batch back to back, ~10 min apart
 auto_post_scene_min = 3                 # one clip per scene: same streamer within 3 min -> only the best
-auto_post_max_per_day = 1               # 1/day until ~25k views/day, then 3/day (clip-channel rule of thumb)
-auto_post_window = "00:30-03:30"        # Berlin time = US evening, when these streamers' viewers are on
-auto_post_jitter_min = 90               # random 0-90 min extra wait per upload: no fixed clock, no bot pattern
+auto_post_max_per_day = 4               # owner 2026-11-21: 3-5/day while growing; best clips first
+auto_post_window = "18:00-04:00"        # used when auto_post_slots is empty
+# Time-slot test (Berlin time): each day posts its batch inside the next slot in turn; compare views per slot with
+# `clipfarm stats`, then keep the best slot only (e.g. auto_post_slots = ["22:00"]).
+auto_post_slots = ["19:00", "22:00", "01:00"]   # = 13:00 / 16:00 / 19:00 US Eastern
+auto_post_slot_min = 60
+auto_post_jitter_min = 3                # small random wait so posts are not on an exact clock
 # rolling 24 h incl. manual uploads; YouTube's own limit is unpublished
+
+# ---- TikTok / Instagram copy-paste captions (posted by hand for now) ----
+[post.social]
+follow_line = "Follow for daily GTA 6 streamer clips"
+handle_tiktok = ""                      # e.g. "@streamchaosclips" once the TikTok account exists
+handle_instagram = ""
+reach_tag_tiktok = "#fyp"
+reach_tag_instagram = "#gaming"
+mood_tag = "#funny"
+
+# ---- Paid clipping campaigns (Content Rewards). A clip goes to the FIRST campaign that accepts its streamer. ----
+[[campaign]]
+name = "kai_cenat_gta6_pool"            # $10K pool: 1K views/clip to count, 750K total to share; NO logos
+url = "https://contentrewards.com/c/campaigns/1d2bcb00-c904-415f-aa82-f95b96baad86"
+streamers = ["kaicenat"]
+hashtags = ["#KAICENAT"]                # + Kai's name in caption/overlay (titles already name the streamer)
+
+[[campaign]]
+name = "clipup_gta6_logo"               # PAUSED 2026-11-21: logo hurts viewing; turn on once the channel has steady views
+enabled = false
+# $0.30/1K tier-1 views, paid from 10K views/clip; logo whole clip
+url = "https://contentrewards.com/c/campaigns/802cf95a-ea84-4070-9a96-8a917831cb16"
+streamers = "*"                         # any streamer playing GTA 6
+hashtags = ["#gta6", "#Clipup"]
+logo = "assets/campaigns/clipup/sign_cutout.png"   # the sign other ClipUp clippers use

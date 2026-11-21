@@ -39,6 +39,8 @@ class PostItem:
     tiktok_caption: str | None = None
     instagram_caption: str | None = None
     video_hash: str | None = None  # sha1 of short.mp4: the same video is never queued twice
+    campaign: str | None = None  # Content Rewards campaign this clip is made for (see campaigns.py)
+    campaign_hashtags: list[str] = field(default_factory=list)  # required in every caption
     created: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -52,6 +54,11 @@ def caption_for(item: PostItem, cfg: dict) -> str:
     credit = cfg.get("credit_template", "🎥 {streamer}").format(streamer=item.streamer)
     tags = " ".join("#" + t.lstrip("#") for t in item.tags)
     return "\n".join(x for x in (item.description, credit, tags) if x)
+
+
+def _with_tags(text: str, hashtags: list[str]) -> str:
+    from .campaigns import with_hashtags
+    return with_hashtags(text, {"hashtags": hashtags})
 
 
 class DuplicateItem(ValueError):
@@ -75,7 +82,8 @@ def find_duplicate(root: Path, video_hash: str, source_clip: str | None) -> tupl
 
 
 def add(root: Path, video: Path, title: str, streamer: str, cfg: dict, thumbnail: Path | None = None,
-        score: int | None = None, source_clip: str | None = None, titles: dict | None = None) -> PostItem:
+        score: int | None = None, source_clip: str | None = None, titles: dict | None = None,
+        campaign: dict | None = None) -> PostItem:
     if len(title) > 100:
         raise SystemExit("title > 100 chars (YouTube limit)")
     titles = titles or {}
@@ -90,7 +98,8 @@ def add(root: Path, video: Path, title: str, streamer: str, cfg: dict, thumbnail
         score=score, source_clip=source_clip,
         youtube_description=titles.get("youtube_description"),
         tiktok_caption=titles.get("tiktok_caption"), instagram_caption=titles.get("instagram_caption"),
-        video_hash=vh)
+        video_hash=vh, campaign=(campaign or {}).get("name"),
+        campaign_hashtags=list((campaign or {}).get("hashtags", [])))
     state = "pending"
     floor = cfg.get("auto_approve_min_score")
     if floor is not None and score is not None and score >= floor:
@@ -131,19 +140,51 @@ def youtube_args(item: PostItem, cfg: dict) -> dict:
     s = item.streamer
     if item.youtube_description and "#" not in desc:  # 3 hashtags: game, streamer, shorts
         desc += f"\n#GTA6 #{s.replace(' ', '')} #Shorts"
-    tags = list(dict.fromkeys([*item.tags, f"{s} GTA 6", f"{s} clips", f"{s} highlights", "GTA 6", "GTA VI",
+    desc = _with_tags(desc, item.campaign_hashtags)
+    tags = list(dict.fromkeys([*item.tags, *(h.lstrip("#") for h in item.campaign_hashtags), f"{s} GTA 6", f"{s} clips", f"{s} highlights", "GTA 6", "GTA VI",
                                "GTA 6 gameplay", "GTA 6 funny moments"]))
     return {"title": item.title, "description": desc[:5000], "tags": tags,
             "categoryId": cfg.get("youtube_category", "20"),
             "privacyStatus": cfg.get("youtube_privacy", "public")}
 
 
+STREAMER_TAGS = {"xqc": "xqc", "kaicenat": "kaicenat", "ishowspeed": "ishowspeed", "caseoh_": "caseoh",
+                 "zackrawrr": "asmongold", "stableronaldo": "stableronaldo", "jynxzi": "jynxzi",
+                 "ohnepixel": "ohnepixel", "lacy": "lacy", "clix": "clix"}
+
+
+DISPLAY = {"xqc": "xQc", "kaicenat": "Kai Cenat", "ishowspeed": "IShowSpeed", "caseoh_": "CaseOh",
+           "zackrawrr": "Asmongold", "stableronaldo": "StableRonaldo", "jynxzi": "Jynxzi", "ohnepixel": "ohnePixel",
+           "lacy": "Lacy", "clix": "Clix", "summit1g": "summit1g"}
+
+
+def social_caption(item: PostItem, platform: str, cfg: dict) -> str:
+    """Copy-paste caption for TikTok / Instagram: hook line, credit, follow line, 5 hashtags.
+    Hashtag mix (in this order): game, streamer, streamer clips, one broad reach tag, one mood tag;
+    campaign hashtags (e.g. #KAICENAT) are added on top. 5 is the most Instagram allows."""
+    sc = cfg.get("social", {})
+    hook = (item.tiktok_caption if platform == "tiktok" else item.instagram_caption) or item.title
+    hook = " ".join(w for w in hook.split() if not w.startswith("#")).strip() or item.title
+    st = STREAMER_TAGS.get(item.streamer.lower(), item.streamer.lower().replace(" ", ""))
+    tags = ["#gta6", f"#{st}", f"#{st}clips", sc.get(f"reach_tag_{platform}", "#fyp" if platform == "tiktok" else "#gaming"),
+            sc.get("mood_tag", "#funny")]
+    for ct in item.campaign_hashtags:  # a campaign's exact spelling wins (#KAICENAT replaces #kaicenat)
+        tags = [ct if t.lower() == ct.lower() else t for t in tags]
+        if ct not in tags:
+            tags.insert(len(tags) - 1, ct)
+    tags = list(dict.fromkeys(tags))[:5] if platform == "instagram" else list(dict.fromkeys(tags))
+    credit = f"🎥 {DISPLAY.get(item.streamer.lower(), item.streamer)} live on stream"
+    follow = sc.get("follow_line", "Follow for daily GTA 6 streamer clips")
+    handle = sc.get(f"handle_{platform}")
+    lines = [hook, credit, f"{follow} {handle}".strip() if handle else follow, " ".join(tags)]
+    return "\n".join(lines)
+
+
 def manual_pack(d: Path, item: PostItem, cfg: dict, platforms: list[str]) -> list[str]:
     """For platforms without auto-posting: write ready-to-paste captions next to the video."""
     written = []
     for p in platforms:
-        cap = {"tiktok": item.tiktok_caption, "instagram": item.instagram_caption}.get(p) or \
-            f"{item.title}\n{caption_for(item, cfg)}"
+        cap = social_caption(item, p, cfg) if p in ("tiktok", "instagram") else f"{item.title}\n{caption_for(item, cfg)}"
         f = d / f"manual_{p}.txt"
         f.write_text(cap + "\n")
         written.append(f.name)

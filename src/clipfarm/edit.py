@@ -25,6 +25,7 @@ W, H = 1080, 1920
 WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
 YELLOW, WHITE, BLACK = (255, 222, 0, 255), (255, 255, 255, 255), (0, 0, 0, 255)
 GREEN = (83, 252, 24, 255)
+LOGO_W = 520  # campaign logo width on the 1080-wide Short
 
 
 @dataclass(frozen=True)
@@ -91,10 +92,20 @@ def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> list[str]:
     return lines + ([cur] if cur else [])
 
 
+def paste_logo(img: Image.Image, logo: Path, y: int, width: int = LOGO_W) -> None:
+    """Campaign logo, unaltered except for one uniform scale (campaign rule: no stretch/recolor/crop)."""
+    lg = Image.open(logo).convert("RGBA")
+    lg = lg.resize((width, round(lg.height * width / lg.width)), Image.LANCZOS)
+    img.alpha_composite(lg, ((W - width) // 2, y))
+
+
 def render_overlay(title: str, words: list[Word] | None, active: int, cap_y: int, title_y: int,
-                   style: CaptionStyle = CAPTION_PRESETS["karaoke"]) -> Image.Image:
+                   style: CaptionStyle = CAPTION_PRESETS["karaoke"], logo: Path | None = None,
+                   logo_y: int = 0) -> Image.Image:
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
+    if logo:
+        paste_logo(img, logo, logo_y)
     if title and "*" in title:  # hook banner: big words, *payoff* word in yellow
         from .thumb import parse_words
         toks = parse_words(title)
@@ -155,19 +166,24 @@ def render_overlay(title: str, words: list[Word] | None, active: int, cap_y: int
     return img
 
 
-def _filter(layout: str, facecam: tuple[float, float, float, float] | None) -> tuple[str, int, int]:
+LOGO_BAND = (560, 780)  # with a campaign logo: cam 560 px, gameplay 780 px, black band below holds the logo
+                        # (the layout ClipUp's own clippers use: logo never covers the game or the face)
+
+
+def _filter(layout: str, facecam: tuple[float, float, float, float] | None,
+            band: bool = False) -> tuple[str, int, int]:
     """Returns (filter_complex producing [base], caption_y, title_y)."""
     if layout == "stack":
         if not facecam:
             raise SystemExit("stack layout needs --facecam x,y,w,h (fractions of the frame)")
         fx, fy, fw, fh = facecam
-        top_h, bot_h = 640, H - 640
+        top_h, bot_h = LOGO_BAND if band else (640, H - 640)
         f = (f"[0:v]split=2[a][b];"
              f"[a]crop=iw*{fw}:ih*{fh}:iw*{fx}:ih*{fy},scale={W}:{top_h}:force_original_aspect_ratio=increase,"
              f"crop={W}:{top_h}[cam];"
              f"[b]crop=ih*{W}/{bot_h}:ih,scale={W}:{bot_h}[game];"
-             f"[cam][game]vstack=inputs=2,setsar=1[base]")
-        return f, top_h + 40, 150
+             f"[cam][game]vstack=inputs=2,pad={W}:{H}:0:0:black,setsar=1[base]")
+        return f, top_h + 270, top_h  # banner centred on the seam: covers desk/chin strip, not the face
     if layout == "square":  # center square of the frame on blurred fill
         top = (H - W) // 2 - 60
         f = (f"[0:v]split=2[a][b];"
@@ -186,7 +202,9 @@ def _filter(layout: str, facecam: tuple[float, float, float, float] | None) -> t
 def make_short(src: Path, out: Path, title: str = "", layout: str = "blur",
                facecam: tuple[float, float, float, float] | None = None,
                model: str = WHISPER_MODEL, captions: str = "karaoke",
-               words_override: list[Word] | None = None, chat_events: list[dict] | None = None) -> Path:
+               words_override: list[Word] | None = None, chat_events: list[dict] | None = None,
+               logo: Path | None = None, title_until: float | None = None) -> Path:
+    """title_until: show the hook banner only for the first N seconds (None = whole clip)."""
     style = CAPTION_PRESETS[captions]
     dur = float(subprocess.check_output(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(src)]).strip())
@@ -199,7 +217,7 @@ def make_short(src: Path, out: Path, title: str = "", layout: str = "blur",
         words = transcribe(src, model)
         cache.write_text(json.dumps([w.__dict__ for w in words], ensure_ascii=False))
     log.info("%d caption words", len(words))
-    base_filter, cap_y, title_y = _filter(layout, facecam)
+    base_filter, cap_y, title_y = _filter(layout, facecam, band=bool(logo))
 
     # caption timeline: (start, end, chunk, active_index)
     cap: list[tuple[float, float, list[Word] | None, int]] = []
@@ -213,7 +231,7 @@ def make_short(src: Path, out: Path, title: str = "", layout: str = "blur",
                 t = e
     chat_events = chat_events or []
     # merge caption + chat change points into one overlay timeline
-    cuts = sorted({0.0, dur, *[c[0] for c in cap], *[c[1] for c in cap],
+    cuts = sorted({0.0, dur, *([title_until] if title_until else []), *[c[0] for c in cap], *[c[1] for c in cap],
                    *[m["show"] for m in chat_events], *[m["hide"] for m in chat_events]})
     cuts = [c for c in cuts if 0 <= c <= dur]
     states = []
@@ -223,18 +241,25 @@ def make_short(src: Path, out: Path, title: str = "", layout: str = "blur",
         mid = (s + e) / 2
         cur = next((c for c in cap if c[0] <= mid < c[1]), None)
         vis = tuple(i for i, m in enumerate(chat_events) if m["show"] <= mid < m["hide"])
-        states.append((s, e, cur[2] if cur else None, cur[3] if cur else -1, vis))
-    chat_box = (60, H - 560, W - 60, H - 150) if layout == "stack" else (60, H - 430, W - 60, H - 60)
+        on = title_until is None or mid < title_until
+        states.append((s, e, cur[2] if cur else None, cur[3] if cur else -1, vis, on))
+    if layout == "stack":  # logo centred in the black band under the gameplay, clear of the app's bottom UI
+        band_top = sum(LOGO_BAND)
+        logo_y = band_top + 30
+        chat_box = (60, cap_y + 110, W - 60, band_top - 20) if logo else (60, H - 560, W - 60, H - 150)
+    else:  # blur/square: logo in the empty blurred band at the top
+        logo_y = 170
+        chat_box = (60, H - 430, W - 60, H - 60)
 
     with tempfile.TemporaryDirectory() as tmp:
         tmpd = Path(tmp)
         cache: dict[tuple, Path] = {}
         lines = ["ffconcat version 1.0"]
-        for n, (s, e, ch, act, vis) in enumerate(states):
-            key = (tuple(w.text for w in ch) if ch else (), act, vis)
+        for n, (s, e, ch, act, vis, on) in enumerate(states):
+            key = (tuple(w.text for w in ch) if ch else (), act, vis, on)
             if key not in cache:
                 p = tmpd / f"o{len(cache):04d}.png"
-                img = render_overlay(title, ch, act, cap_y, title_y, style)
+                img = render_overlay(title if on else "", ch, act, cap_y, title_y, style, logo, logo_y)
                 if vis:
                     from .chatoverlay import draw_chat
                     draw_chat(img, [chat_events[i] for i in vis], chat_box)

@@ -144,3 +144,29 @@ def test_youtube_tags_include_streamer():
     a = youtube_args(it, {})
     assert "xQc GTA 6" in a["tags"] and len(a["tags"]) == len(set(a["tags"]))
     assert a["description"].endswith("#GTA6 #xQc #Shorts")
+
+
+def test_slot_rotation():
+    import time as _t
+    from clipfarm.autopost import in_window, slot_window
+    slots = ["19:00", "22:00", "01:00"]
+    d1 = _t.mktime((2026, 11, 22, 19, 30, 0, 0, 0, -1))
+    seen = {slot_window(slots, 60, d1 + k * 86400)[0] for k in range(3)}
+    assert seen == set(slots)  # three days cycle through all slots
+    s, w = slot_window(slots, 60, d1)
+    late = d1 + 5.5 * 3600  # 01:00 the same night belongs to the same posting day
+    assert slot_window(slots, 60, late)[0] == s
+    h = int(s[:2])
+    assert in_window(w, _t.mktime((2026, 11, 22 if h > 6 else 23, h, 30, 0, 0, 0, -1)))
+
+
+def test_slot_cap_is_per_day():
+    import time as _t
+    ap = AutoPoster({"post": {"auto_post_min_score": 90, "auto_post_slots": ["19:00", "22:00", "01:00"],
+                              "auto_post_max_per_day": 4, "auto_post_min_gap_min": 10, "auto_post_max_per_hour": 6,
+                              "queue_dir": "/nonexistent"}})
+    ap.posted.clear()
+    t = _t.time()
+    ap.posted.extend([t - 18 * 3600 + k * 600 for k in range(4)])  # yesterday's batch, 18 h ago
+    r = ap.wait_reason(now=t)
+    assert r is None or "daily cap" not in r

@@ -1,0 +1,187 @@
+<title>Clippy Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: one phone-width column of clip cards (video, facts, verdict), filter chips sticky on top. */
+:root {
+  --bg: #f3f4f7; --panel: #ffffff; --fg: #14161c; --muted: #5d6372; --line: #dfe2ea;
+  --accent: #2f5bff; --ok: #138a4b; --ok-bg: #e2f5ea; --bad: #c4302b; --bad-bg: #fbe5e4;
+  --warn: #9a6200; --warn-bg: #fdf0d6;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "Inter", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1015; --panel: #171a22; --fg: #eceef4; --muted: #9aa1b2; --line: #2a2f3b;
+  --accent: #7d9bff; --ok: #4fd18b; --ok-bg: #12301f; --bad: #ff7a73; --bad-bg: #3a1716;
+  --warn: #f3b74f; --warn-bg: #352708; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0e1015; --panel: #171a22; --fg: #eceef4; --muted: #9aa1b2; --line: #2a2f3b;
+  --accent: #7d9bff; --ok: #4fd18b; --ok-bg: #12301f; --bad: #ff7a73; --bad-bg: #3a1716;
+  --warn: #f3b74f; --warn-bg: #352708; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); }
+.wrap { max-width: 560px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 60px; }
+h1 { font: 800 1.7rem/1.1 var(--display); letter-spacing: -0.01em; margin: 0 0 4px; }
+.sub { color: var(--muted); margin: 0 0 14px; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.chip { border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 999px; padding: 6px 12px; font: 600 0.85rem var(--body); cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.count { margin-left: auto; color: var(--muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.list { display: grid; gap: 18px; margin-top: 8px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.card video { display: block; width: 100%; aspect-ratio: 9 / 16; max-height: 78vh; background: #000; object-fit: contain; }
+.facts { padding: 12px 14px 4px; display: grid; gap: 6px; min-width: 0; }
+.title { font: 700 1.05rem/1.3 var(--display); margin: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.8rem; }
+.tag { border-radius: 6px; padding: 2px 8px; background: var(--bg); color: var(--muted); font-weight: 600; }
+.tag.hype { color: var(--accent); font-variant-numeric: tabular-nums; }
+.tag.flag { background: var(--warn-bg); color: var(--warn); }
+.payoff { color: var(--muted); font-size: 0.85rem; margin: 0; }
+.verdict { padding: 10px 14px 14px; display: grid; gap: 10px; }
+.btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btn { border: 1px solid var(--line); border-radius: 10px; padding: 11px; font: 700 0.95rem var(--body); cursor: pointer; background: var(--panel); color: var(--fg); }
+.btn.yes[aria-pressed="true"] { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
+.btn.no[aria-pressed="true"] { background: var(--bad-bg); color: var(--bad); border-color: var(--bad); }
+.reasons { display: flex; flex-wrap: wrap; gap: 6px; }
+.reasons .chip { font-weight: 500; padding: 4px 10px; }
+textarea { width: 100%; box-sizing: border-box; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font: 0.9rem var(--body); background: var(--bg); color: var(--fg); resize: vertical; }
+.caps { display: grid; gap: 8px; }
+.cap { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: grid; gap: 6px; min-width: 0; }
+.cap-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.cap-head b { font: 600 0.8rem var(--body); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.cap pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 0.85rem/1.45 var(--body); user-select: all; }
+.copy { border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 8px; padding: 4px 10px; font: 600 0.8rem var(--body); cursor: pointer; }
+.saved { color: var(--muted); font-size: 0.78rem; min-height: 1em; }
+.empty { text-align: center; color: var(--muted); padding: 40px 10px; border: 1px dashed var(--line); border-radius: 14px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+  <h1>Clippy Review</h1>
+  <p class="sub">Duyệt từng Short trước khi đăng. Chọn lý do (hook, hài, chán…) để Clippy học được thế nào là highlight.</p>
+  <div class="bar" role="toolbar" aria-label="Lọc">
+    <button class="chip" data-f="todo" aria-pressed="true">Chưa duyệt</button>
+    <button class="chip" data-f="yes" aria-pressed="false">Đã duyệt</button>
+    <button class="chip" data-f="no" aria-pressed="false">Đã bỏ</button>
+    <button class="chip" data-f="all" aria-pressed="false">Tất cả</button>
+    <span class="count" id="count"></span>
+  </div>
+  <div class="list" id="list">
+    <div class="empty" id="empty">Đang tải danh sách clip… Mỗi clip sẽ hiện ở đây kèm video, điểm hype, chiến dịch và hai nút Duyệt / Bỏ.</div>
+  </div>
+</div>
+
+<script>
+const GOOD = ["Hook mạnh", "Hài", "Kịch tính", "Chat bùng nổ", "Dễ hiểu"];
+const BAD = ["Hook yếu", "Chán", "Khó hiểu", "Quá dài", "Cutscene nhạt", "Lỗi dựng"];
+const CAMP = { kai_cenat_gta6_pool: "Kai Cenat pool", clipup_gta6_logo: "ClipUp logo" };
+let clips = [], reviews = {}, filter = "todo", db = null;
+const $ = (s, r = document) => r.querySelector(s);
+const el = (tag, attrs = {}, text) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text != null) e.textContent = text; return e; };
+
+function decision(id) { return reviews[id]?.decision || null; }
+function visible() {
+  return clips.filter(c => filter === "all" || (filter === "todo" ? !decision(c.id) : decision(c.id) === filter))
+    .sort((a, b) => (b.hype || 0) - (a.hype || 0));
+}
+async function save(id, patch) {
+  reviews[id] = { ...(reviews[id] || {}), ...patch, at: new Date().toISOString() };
+  const note = document.getElementById("saved-" + id);
+  if (!db) { if (note) note.textContent = "Không lưu được: trang chưa kết nối kho dữ liệu."; return; }
+  try { await db.collection("reviews").doc(id).set(reviews[id]); if (note) note.textContent = "Đã lưu"; }
+  catch (e) { if (note) note.textContent = "Lưu thất bại (" + (e.code || "lỗi") + "). Thử bấm lại."; }
+}
+function card(c) {
+  const r = reviews[c.id] || {};
+  const box = el("article", { class: "card", id: "c-" + c.id });
+  const v = el("video", { controls: "", playsinline: "", preload: "metadata", src: c.video });
+  box.append(v);
+  const f = el("div", { class: "facts" });
+  f.append(el("h2", { class: "title" }, c.title));
+  const m = el("div", { class: "meta" });
+  m.append(el("span", { class: "tag hype" }, "hype " + c.hype), el("span", { class: "tag" }, c.streamer));
+  if (c.campaign) m.append(el("span", { class: "tag" }, CAMP[c.campaign] || c.campaign));
+  if (c.reason) m.append(el("span", { class: "tag flag" }, c.reason.replace("risk flagged: ", "AI cảnh báo: ")));
+  f.append(m);
+  if (c.payoff) f.append(el("p", { class: "payoff" }, c.payoff));
+  box.append(f);
+  const vd = el("div", { class: "verdict" });
+  const bt = el("div", { class: "btns" });
+  const yes = el("button", { class: "btn yes", id: "yes-" + c.id, "aria-pressed": String(r.decision === "yes") }, "Duyệt");
+  const no = el("button", { class: "btn no", id: "no-" + c.id, "aria-pressed": String(r.decision === "no") }, "Bỏ");
+  yes.onclick = () => decide(c.id, "yes");
+  no.onclick = () => decide(c.id, "no");
+  bt.append(yes, no); vd.append(bt);
+  const rs = el("div", { class: "reasons" });
+  for (const t of [...GOOD, ...BAD]) {
+    const on = (r.tags || []).includes(t);
+    const ch = el("button", { class: "chip", "aria-pressed": String(on) }, t);
+    ch.onclick = () => { const tags = new Set(reviews[c.id]?.tags || []); tags.has(t) ? tags.delete(t) : tags.add(t);
+      save(c.id, { tags: [...tags] }); ch.setAttribute("aria-pressed", String(tags.has(t))); };
+    rs.append(ch);
+  }
+  vd.append(rs);
+  const ta = el("textarea", { id: "note-" + c.id, placeholder: "Ghi chú (tuỳ chọn): vì sao hay / dở" });
+  ta.value = r.note || "";
+  ta.onchange = () => save(c.id, { note: ta.value.trim() });
+  vd.append(ta, el("div", { class: "saved", id: "saved-" + c.id }, r.at ? "Đã lưu" : ""));
+  const caps = el("div", { class: "caps" });
+  for (const [k, label] of [["tiktok", "TikTok"], ["instagram", "Instagram"]]) {
+    if (!c[k]) continue;
+    const box = el("div", { class: "cap" }), head = el("div", { class: "cap-head" });
+    const pre = el("pre", {}, c[k]);
+    const b = el("button", { class: "copy" }, "Copy");
+    b.onclick = async () => {
+      try { await navigator.clipboard.writeText(c[k]); b.textContent = "Đã copy"; }
+      catch { const r = document.createRange(); r.selectNodeContents(pre); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); b.textContent = "Đã chọn, bấm giữ để copy"; }
+      setTimeout(() => b.textContent = "Copy", 2500);
+    };
+    head.append(el("b", {}, "Caption " + label), b); box.append(head, pre); caps.append(box);
+  }
+  if (caps.children.length) vd.append(caps);
+  box.append(vd);
+  return box;
+}
+function counts() {
+  const done = clips.filter(c => decision(c.id)).length;
+  $("#count").textContent = clips.length ? `${done}/${clips.length} đã xem` : "";
+}
+function sync() {  // reviews changed: update buttons in place (never rebuild cards: that would stop the video)
+  for (const c of clips) {
+    const y = document.getElementById("yes-" + c.id), n = document.getElementById("no-" + c.id);
+    if (y) y.setAttribute("aria-pressed", String(decision(c.id) === "yes"));
+    if (n) n.setAttribute("aria-pressed", String(decision(c.id) === "no"));
+  }
+  counts();
+}
+function decide(id, d) {
+  save(id, { decision: d });
+  sync();
+  if (filter !== "all" && filter !== d) {  // the card no longer belongs in this view: let it go after a beat
+    const box = document.getElementById("c-" + id);
+    setTimeout(() => { box?.querySelector("video")?.pause(); box?.remove(); if (!$("#list").children.length) render(); }, 450);
+  }
+}
+function render() {
+  const list = $("#list"), items = visible();
+  counts();
+  list.replaceChildren();
+  if (!clips.length) { list.append(el("div", { class: "empty" }, db ? "Chưa có clip nào trong hàng duyệt. Clippy sẽ thêm clip mới vào đây." : "Không kết nối được kho dữ liệu. Mở trang này khi đã đăng nhập claude.ai.")); return; }
+  if (!items.length) { list.append(el("div", { class: "empty" }, filter === "todo" ? "Xong hết rồi. Không còn clip nào chờ duyệt." : "Không có clip nào trong mục này.")); return; }
+  for (const c of items) list.append(card(c));
+}
+document.querySelectorAll(".bar .chip").forEach(b => b.onclick = () => {
+  filter = b.dataset.f; document.querySelectorAll(".bar .chip").forEach(x => x.setAttribute("aria-pressed", String(x === b))); render();
+});
+(async () => {
+  const timer = setTimeout(() => { if (!clips.length) render(); }, 10000);
+  db = await claude.use("db");
+  if (!db) { clearTimeout(timer); render(); return; }
+  db.collection("reviews").onSnapshot(s => { reviews = {}; s.docs.forEach(d => reviews[d.id] = d.data()); sync(); },
+    () => {});
+  db.collection("clips").onSnapshot(s => { clearTimeout(timer); clips = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); },
+    () => { clearTimeout(timer); render(); });
+})();
+</script>

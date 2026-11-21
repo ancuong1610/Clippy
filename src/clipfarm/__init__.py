@@ -184,7 +184,12 @@ async def run(cfg: dict, test_trigger: float | None):
         if ap.paused_until > time.time():
             log.info("uploads paused until %s (YouTube daily limit); clips are edited and queued meanwhile",
                      datetime.fromtimestamp(ap.paused_until).strftime("%H:%M"))
-    chans = [Channel(c, cfg, root, buffer_dir, ap if ap.enabled else None) for c in cfg["channel"]]
+    today = time.strftime("%Y-%m-%d")  # campaign-track streamers are watched only while their campaign runs
+    ended = [c["name"] for c in cfg["channel"] if c.get("until") and str(c["until"]) < today]
+    if ended:
+        log.info("campaign over, not watching: %s", ", ".join(ended))
+    chans = [Channel(c, cfg, root, buffer_dir, ap if ap.enabled else None) for c in cfg["channel"]
+             if c["name"] not in ended]
     if ap.enabled:
         tasks_extra = [ap.run_poster()]
     else:

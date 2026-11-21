@@ -62,6 +62,17 @@ def in_window(window: tuple[int, int] | None, now: float) -> bool:
     return a <= m < b if a <= b else (m >= a or m < b)
 
 
+def slot_window(slots: list[str], length_min: float, now: float) -> tuple[str, tuple[int, int]]:
+    """Time-slot test: each posting day uses the next slot in turn (a day runs 06:00-06:00 local, so a 01:00 slot
+    belongs to the evening before). Returns (slot, window)."""
+    t = time.localtime(now - 6 * 3600)
+    day = int(time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 0, 0, 0, 0, 0, -1)) // 86400)
+    slot = slots[day % len(slots)]
+    h, m = (int(x) for x in slot.split(":"))
+    a = h * 60 + m
+    return slot, (a, int(a + length_min) % 1440)
+
+
 def recent_posts(root: Path, within_s: float = 86400) -> list[float]:
     """Upload times of the last 24 h (queue/posted/*/result.json), so limits survive restarts."""
     now = time.time()
@@ -75,6 +86,7 @@ def recent_posts(root: Path, within_s: float = 86400) -> list[float]:
 
 class AutoPoster:
     def __init__(self, cfg: dict):
+        self.cfg = cfg
         self.pcfg = {k: v for k, v in cfg.get("post", {}).items() if k != "auto_approve_min_score"}
         self.min_score = self.pcfg.get("auto_post_min_score")
         self.max_per_hour = int(self.pcfg.get("auto_post_max_per_hour", 3))
@@ -93,6 +105,8 @@ class AutoPoster:
             self.paused_until = 0.0
         self.tasks: set[asyncio.Task] = set()
         self.window = parse_window(self.pcfg.get("auto_post_window"))
+        self.slots = list(self.pcfg.get("auto_post_slots", []))  # time-slot test; overrides auto_post_window
+        self.slot_len = float(self.pcfg.get("auto_post_slot_min", 60))
         self.jitter_s = float(self.pcfg.get("auto_post_jitter_min", 0)) * 60
         self.next_at: float | None = None  # random earliest time for the next upload
 
@@ -121,13 +135,19 @@ class AutoPoster:
             self.posted.popleft()
         if now < self.paused_until:
             return "YouTube daily upload limit (paused)"
-        if not in_window(self.window, now):
+        if self.slots:
+            slot, win = slot_window(self.slots, self.slot_len, now)
+            if not in_window(win, now):
+                return f"outside today's test slot ({slot}, {self.slot_len:.0f} min)"
+        elif not in_window(self.window, now):
             return f"outside posting window ({self.pcfg.get('auto_post_window')})"
         if self.posted and now - self.posted[-1] < self.min_gap_s:
             return f"spacing ({self.min_gap_s / 60:.0f} min between posts)"
         if sum(now - t <= 3600 for t in self.posted) >= self.max_per_hour:
             return f"rate limit ({self.max_per_hour}/hour)"
-        if len(self.posted) >= self.max_per_day:
+        # slot test: the cap is per posting day (one slot), not a rolling 24 h, so slot 01:00 -> 19:00 isn't blocked
+        recent = (sum(now - t <= (self.slot_len + 60) * 60 for t in self.posted) if self.slots else len(self.posted))
+        if recent >= self.max_per_day:
             return f"daily cap ({self.max_per_day}/24 h)"
         if self.next_at is None:  # allowed now: pick a random moment within the jitter, then post
             self.next_at = now + random.uniform(0, self.jitter_s)
@@ -203,8 +223,9 @@ class AutoPoster:
         log.info("[%s] ⏫ posting best of %d waiting (hype %s): %s", it.streamer, len(waiting), it.score, it.title)
         out = self._upload(it.id, it.streamer, it.title)
         with (self.root / "autopost.jsonl").open("a") as f:
+            slot = slot_window(self.slots, self.slot_len, time.time())[0] if self.slots else None
             f.write(json.dumps({"ts": time.time(), "streamer": it.streamer, "score": it.score, "id": it.id,
-                                "title": it.title, **out}, ensure_ascii=False) + "\n")
+                                "title": it.title, "slot": slot, **out}, ensure_ascii=False) + "\n")
         return out
 
     async def run_poster(self, every_s: float = 60) -> None:
@@ -220,12 +241,15 @@ class AutoPoster:
                     log.exception("rolling poster failed: %s", e)
 
     def process(self, clip: Path, streamer: str, score: int) -> dict:
+        from .campaigns import route
         from .make import make
-        log.info("[%s] ⚡ hype %d >= %d: editing", streamer, score, self.min_score)
-        r = make(clip, streamer, self.context, out_dir=clip.parent / "shorts")
+        camp = route(streamer, self.cfg)
+        log.info("[%s] ⚡ hype %d >= %d: editing (campaign: %s)", streamer, score, self.min_score,
+                 (camp or {}).get("name", "none"))
+        r = make(clip, streamer, self.context, out_dir=clip.parent / "shorts", campaign=camp)
         t = r["titles"]
         item = P.add(self.root, Path(r["short"]), t["youtube_titles"][0], streamer, self.pcfg,
-                     score=score, source_clip=str(clip), titles=t)
+                     score=score, source_clip=str(clip), titles=t, campaign=camp)
         reason = self.decide(t)
         out = {"id": item.id, "title": item.title, "posted": False, "reason": reason}
         if reason:

@@ -27,6 +27,33 @@ def trim(src: Path, start: float, end: float, out: Path) -> Path:
     return out
 
 
+def loudest(video: Path, win: float = 1.5, skip_frac: float = 0.25) -> float:
+    """Start of the loudest `win` seconds (RMS), ignoring the first `skip_frac` of the clip (the setup)."""
+    import numpy as np
+    sr = 8000
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(video), "-ac", "1", "-ar", str(sr), "-f", "s16le", "-"],
+                         capture_output=True).stdout
+    a = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
+    n = int(win * sr)
+    if len(a) < n * 2:
+        return 0.0
+    energy = np.convolve(a * a, np.ones(n, dtype=np.float32), mode="valid")[::sr // 10]  # 0.1 s steps
+    lo = int(len(energy) * skip_frac)
+    return (lo + int(np.argmax(energy[lo:]))) / 10
+
+
+def cold_open(src: Path, at: float, length: float, out: Path) -> Path:
+    """Buffer hook: the loudest moment first (`length` s), then the clip from the start."""
+    fc = (f"[0:v]trim={at:.2f}:{at + length:.2f},setpts=PTS-STARTPTS[v1];"
+          f"[0:a]atrim={at:.2f}:{at + length:.2f},asetpts=PTS-STARTPTS[a1];"
+          f"[0:v]setpts=PTS-STARTPTS[v2];[0:a]asetpts=PTS-STARTPTS[a2];"
+          f"[v1][a1][v2][a2]concat=n=2:v=1:a=1[v][a]")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-filter_complex", fc, "-map", "[v]", "-map", "[a]",
+                    "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "aac", "-b:a", "160k",
+                    "-movflags", "+faststart", str(out)], check=True)
+    return out
+
+
 def shift_words(words: list[dict], start: float, end: float) -> list[Word]:
     return [Word(round(w["start"] - start, 3), round(w["end"] - start, 3), w["text"])
             for w in words if w["start"] >= start - 0.05 and w["end"] <= end + 0.3]
@@ -53,7 +80,11 @@ def chat_events_for(meta: dict, titles: dict, start: float, end: float) -> list[
 
 def make(clip: Path, streamer: str | None = None, context: str = "GTA 6 livestream",
          layout: str = "auto", captions: str = "karaoke", out_dir: Path | None = None,
-         chat: str = "auto", chat_min_score: int = 70) -> dict:
+         chat: str = "auto", chat_min_score: int = 70, campaign: dict | None = None,
+         titles: dict | None = None, hook_s: float = 1.5, banner_s: float = 3.0) -> dict:
+    """campaign: from campaigns.route() -> its logo is burned in. titles: reuse earlier AI output (no API call).
+    hook_s: cold open with the loudest `hook_s` seconds (0 = off); the hook banner shows for hook_s + banner_s."""
+    from .campaigns import logo_path
     out_dir = out_dir or clip.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     words_f = clip.with_suffix(".words.json")
@@ -61,7 +92,7 @@ def make(clip: Path, streamer: str | None = None, context: str = "GTA 6 livestre
         words_f.write_text(json.dumps([w.__dict__ for w in transcribe(clip)], ensure_ascii=False))
     words = json.loads(words_f.read_text())
 
-    t = make_titles(clip, streamer, context)                      # titles, hook, window, fixes
+    t = titles or make_titles(clip, streamer, context)            # titles, hook, window, fixes
     fixed = drop_lyrics(apply_fixes(words, t.get("caption_fixes")), t.get("lyric_spans"))
     start, end = t["window"]
     stem = clip.stem
@@ -77,14 +108,24 @@ def make(clip: Path, streamer: str | None = None, context: str = "GTA 6 livestre
     use_chat = chat == "on" or (chat == "auto" and score >= chat_min_score)
     events = chat_events_for(meta_raw, t, start, end) if use_chat else []
 
-    short = make_short(trimmed, out_dir / f"{stem}_short.mp4", t["thumbnail_text"], chosen, box,
-                       captions=captions, words_override=cut_words, chat_events=events)
+    src, hook_at = trimmed, None
+    if hook_s and end - start > hook_s * 4:
+        hook_at = loudest(trimmed, hook_s)
+        src = cold_open(trimmed, hook_at, hook_s, out_dir / f"{stem}_hook.mp4")
+        hook_words = [Word(round(w.start - hook_at, 3), round(w.end - hook_at, 3), w.text) for w in cut_words
+                      if w.start >= hook_at - 0.05 and w.end <= hook_at + hook_s + 0.05]
+        cut_words = hook_words + [Word(w.start + hook_s, w.end + hook_s, w.text) for w in cut_words]
+        events = [{**m, "show": m["show"] + hook_s, "hide": m["hide"] + hook_s} for m in events]
+    short = make_short(src, out_dir / f"{stem}_short.mp4", t["thumbnail_text"], chosen, box,
+                       captions=captions, words_override=cut_words, chat_events=events,
+                       logo=logo_path(campaign), title_until=(hook_s + banner_s) if hook_at is not None else None)
     thumbs = make_thumbnails(trimmed, ThumbSpec(t["thumbnail_text"], "16:9", box,
                                                 face_focus=focus or (0.5, 0.3)), variants=2, out_dir=out_dir)
 
     result = {"source": str(clip), "short": str(short), "thumbnails": [str(p) for p in thumbs],
               "window": [start, end], "layout": chosen, "facecam": box, "titles": t,
               "score": meta_raw.get("score"), "event": meta_raw.get("event"),
-              "caption_fixes": t.get("caption_fixes"), "chat_overlay": events}
+              "caption_fixes": t.get("caption_fixes"), "chat_overlay": events, "hook_at": hook_at,
+              "campaign": (campaign or {}).get("name")}
     Path(short).with_suffix(".json").write_text(json.dumps(result, indent=2, ensure_ascii=False))
     return result
