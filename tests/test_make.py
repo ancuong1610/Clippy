@@ -58,3 +58,10 @@ def test_facecam_crop_stops_at_cam_border():
     x, y, w, h = snap_to_cam(frames, box, face)
     assert (y + h) * 720 <= 364  # ends at the border, not in the chat
     assert w * 1280 >= 2.2 * 50  # still head-and-shoulders, not a face-only crop
+
+
+def test_hook_tease_ends_before_the_loudest_moment():
+    from clipfarm.make import tease_start
+    assert tease_start(10.0, 1.5) == 7.5  # 7.5-9.0 s: build-up, stops 1 s before the scream/crash
+    assert tease_start(10.0, 1.5, lead=0.5) == 8.0
+    assert tease_start(1.0, 1.5) == 0.0  # never before the clip starts

@@ -79,9 +79,16 @@ uv run clipfarm post
 **What counts as a highlight.** Chat waves (laughter, o7, emote floods) and chat speed only nominate moments. An AI
 judge then looks at 12 frames plus the chat and rates the clip 0–100 against reference moments in
 [judge_examples.toml](judge_examples.toml): xQc's GTA 6 seaplane crash = 95, the shark scene = 90, gym and
-menus ≈ 45, a cutscene punchline that 76 % of chat laughs at = 80. On top of what it sees, a clip gets up to **+15**
-when chat answers as one (35–60 % of chatters in the same mood: laughing, shock, hype, RIP, cringe). Add your own picks to that file to teach it; the bar is
-`[judge] min_hype = 90`.
+menus ≈ 45, a bar cutscene chat laughs at = 35. It scores payoff, stakes, legibility (sound off, 3 s) and surprise,
+anchored on the owner's review of 79 clips: crashes, stunts and weird world moments got approved, story cutscenes
+did not (7/35). Cutscenes are capped at 80 unless the streamer caused the chaos. Gameplay that already shows a
+payoff (≥ 80) gets up to **+15** when chat answers as one (35–60 % of chatters in the same mood). Add your own
+picks to that file to teach it; the bar is `[judge] min_hype = 90`. `scripts/backtest_judge.py` re-judges reviewed
+clips and prints precision/recall against your yes/no.
+
+**Hook.** Every Short opens with a 1.5 s tease of the build-up right *before* the payoff (it ends before the
+judge's first payoff frame and 1 s before the loudest moment), under a banner that asks a question without
+giving the answer (`XQC VS THE *COW*`), then plays the clip from the start.
 
 **Auto-post (live run only).** With `auto_post_min_score = 70` in `[post]`, `clipfarm run` edits every highlight
 clip and uploads it to YouTube without a human step. Clips skip auto-post and wait in `queue/pending/` when:

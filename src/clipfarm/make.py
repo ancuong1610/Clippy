@@ -42,8 +42,15 @@ def loudest(video: Path, win: float = 1.5, skip_frac: float = 0.25) -> float:
     return (lo + int(np.argmax(energy[lo:]))) / 10
 
 
+def tease_start(peak: float, length: float, lead: float = 1.0) -> float:
+    """Start of the hook tease: the `length` s that end `lead` s BEFORE the loudest moment (the scream usually
+    lands with the crash/death), so the hook shows the build-up and the viewer stays to see how it ends.
+    Owner's review 2026-11-21: 'use the second before he dies as the hook, don't show the death'."""
+    return round(max(0.0, peak - lead - length), 2)
+
+
 def cold_open(src: Path, at: float, length: float, out: Path) -> Path:
-    """Buffer hook: the loudest moment first (`length` s), then the clip from the start."""
+    """Buffer hook: a `length` s tease from `at` first, then the clip from the start."""
     fc = (f"[0:v]trim={at:.2f}:{at + length:.2f},setpts=PTS-STARTPTS[v1];"
           f"[0:a]atrim={at:.2f}:{at + length:.2f},asetpts=PTS-STARTPTS[a1];"
           f"[0:v]setpts=PTS-STARTPTS[v2];[0:a]asetpts=PTS-STARTPTS[a2];"
@@ -81,9 +88,11 @@ def chat_events_for(meta: dict, titles: dict, start: float, end: float) -> list[
 def make(clip: Path, streamer: str | None = None, context: str = "GTA 6 livestream",
          layout: str = "auto", captions: str = "karaoke", out_dir: Path | None = None,
          chat: str = "auto", chat_min_score: int = 70, campaign: dict | None = None,
-         titles: dict | None = None, hook_s: float = 1.5, banner_s: float = 3.0) -> dict:
+         titles: dict | None = None, hook_s: float = 1.5, banner_s: float = 3.0, hook_lead: float = 1.0,
+         impact_lead: float = 0.3) -> dict:
     """campaign: from campaigns.route() -> its logo is burned in. titles: reuse earlier AI output (no API call).
-    hook_s: cold open with the loudest `hook_s` seconds (0 = off); the hook banner shows for hook_s + banner_s."""
+    hook_s: cold open with a `hook_s` s tease that ends `hook_lead` s before the loudest moment (0 = off);
+    the hook banner shows for hook_s + banner_s."""
     from .campaigns import logo_path
     out_dir = out_dir or clip.parent
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -110,7 +119,16 @@ def make(clip: Path, streamer: str | None = None, context: str = "GTA 6 livestre
 
     src, hook_at = trimmed, None
     if hook_s and end - start > hook_s * 4:
-        hook_at = loudest(trimmed, hook_s)
+        hook_at = tease_start(loudest(trimmed, hook_s), hook_s, hook_lead)
+        jd = meta_raw.get("judge") or {}
+        if isinstance(jd.get("payoff_at"), (int, float)) and start <= jd["payoff_at"] <= end:
+            # the judge saw the payoff in a frame; it began at most one frame step earlier. Look again with dense
+            # frames for the moment of contact and end the tease right before it ("right before the disaster").
+            from .judge import impact_time
+            step = jd.get("frame_step") or 3.0
+            hit = impact_time(clip, jd.get("payoff") or "the payoff", jd["payoff_at"] - step, jd["payoff_at"] + 0.4)
+            tease_end = (hit - impact_lead) if hit is not None else (jd["payoff_at"] - step)
+            hook_at = round(max(0.0, tease_end - start - hook_s), 2)
         src = cold_open(trimmed, hook_at, hook_s, out_dir / f"{stem}_hook.mp4")
         hook_words = [Word(round(w.start - hook_at, 3), round(w.end - hook_at, 3), w.text) for w in cut_words
                       if w.start >= hook_at - 0.05 and w.end <= hook_at + hook_s + 0.05]

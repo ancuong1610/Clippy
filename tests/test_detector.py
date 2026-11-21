@@ -122,11 +122,14 @@ def test_mood_peak_and_unison_bonus():
     assert mood_peak([{"t": 0, "user": "a", "text": "LOL"}]) == (0.0, "")  # too few chatters
 
 
-def test_chat_unison_bonus_applies_to_gameplay_and_cutscenes():
+def test_chat_unison_bonus_only_for_gameplay_with_payoff():
     from clipfarm.judge import final_score
     chat = [{"t": i * 0.2, "user": f"u{i}", "text": "KEKW"} for i in range(40)]
     assert final_score({"hype": 80, "cutscene": False}, chat)["hype"] == 95
-    assert final_score({"hype": 80, "cutscene": True}, chat)["hype"] == 95  # owner: cutscenes are fine
+    assert final_score({"hype": 70, "cutscene": False}, chat)["hype"] == 70  # no payoff on screen: no bonus
+    assert final_score({"hype": 80, "cutscene": True}, chat)["hype"] == 80  # owner review: cutscenes flopped
+    assert final_score({"hype": 90, "cutscene": True}, chat)["hype"] == 80
+    assert final_score({"hype": 90, "cutscene": True, "streamer_caused": True}, chat)["hype"] == 90
 
 
 def test_game_filter_category_then_title():

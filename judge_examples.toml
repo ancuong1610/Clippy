@@ -1,5 +1,7 @@
 # Hype examples the AI judge calibrates against (shown to it as reference points).
 # Add moments you'd post (and ones you wouldn't). score = what YOU think, 0-100. Highlight bar: 90.
+# 2026-11-21: re-anchored on the owner's review of 79 queued clips (27 approved, 52 rejected). Only half of
+# those clips (the "train" half) are used here, so the other half stays an honest test set.
 
 [[example]]
 score = 95
@@ -8,10 +10,58 @@ clip = "xQc, GTA 6 launch, VOD 2932113307 @ 8:04"
 what = "flies a seaplane, does barrel rolls over the coast, crashes into palm trees in a debris explosion, 'Wasted', stash impounded; chat floods LOL / o7 crash / lost everything"
 
 [[example]]
+score = 92
+by = "user review (approved)"
+clip = "zackrawrr, seaplane"
+what = "seaplane crashes into a utility pole, 'Mission failed'; dramatic, funny, a stranger gets it instantly"
+
+[[example]]
+score = 92
+by = "user review (approved)"
+clip = "stableronaldo, seaplane"
+what = "flies a seaplane under a bridge doing stunts, ends in a disastrous crash and mission failure"
+
+[[example]]
 score = 90
 by = "user"
 clip = "xQc, GTA 6 launch, VOD 2932113307 @ 7:50"
 what = "boat chase ends with the enemy boat exploding; he jumps into the water by the burning wreck to loot it while a shark circles him; chat: wtf the shark, shark o7"
+
+[[example]]
+score = 90
+by = "research (142K views, Speedy Boykins)"
+clip = "iShowSpeed, GTA 6"
+what = "watches an iguana get run over by a car on the street, picks it up and throws it at an NPC: weird, unexpected world moment"
+
+[[example]]
+score = 88
+by = "user review (approved: 'doing trick move, nice')"
+clip = "caseoh_, seaplane"
+what = "flies a seaplane and pulls a clean barrel roll over the ocean"
+
+[[example]]
+score = 88
+by = "user review (approved)"
+clip = "xQc, jet ski"
+what = "jet ski hits a ramp and does a clean stunt jump over the water"
+
+[[example]]
+score = 85
+by = "user review (approved: 'unexpected moment')"
+clip = "zackrawrr, seaplane"
+what = "seaplane narrowly clips a bird mid-air, chat laughs"
+
+[[example]]
+score = 85
+by = "user review (approved)"
+clip = "caseoh_, car"
+what = "car catches fire and explodes next to a gas can"
+
+[[example]]
+score = 55
+by = "user review (rejected: boring, hard to follow)"
+clip = "stableronaldo, street"
+what = "street fight ends in a knockout, cops arrive and arrest him; small, needs context"
 
 [[example]]
 score = 45
@@ -20,10 +70,16 @@ clip = "xQc gym"
 what = "workout minigame: punching bag, squats; chat spams GIGACHAD — loud but nothing happens"
 
 [[example]]
-score = 80
-by = "user"
-clip = "xQc, GTA 6 launch, VOD 2932113307 @ 7:42 (story cutscene)"
-what = "story cutscene on a boat with a punchline ('I'll be your best man' / 'She hates you more!'); xQc reacts; 76% of chat laughing — cutscenes are fine when the beat lands, chat shows it"
+score = 45
+by = "user review (rejected: boring cutscene)"
+clip = "ishowspeed, story mission"
+what = "a boat blows up a shack, but inside a scripted story cutscene the streamer just watches"
+
+[[example]]
+score = 35
+by = "user review (rejected)"
+clip = "summit1g / xQc, bar cutscenes"
+what = "story cutscene at a bar, characters banter about eye contact; chat erupts laughing — strangers can't follow the joke"
 
 [[example]]
 score = 25

@@ -23,14 +23,25 @@ LIVE CHAT right around the moment (how viewers reacted):
 {chat}
 
 Write for maximum views, like top clip channels: concrete, emotional, curiosity gap, names the streamer.
+How the most-viewed GTA 6 streamer clips are titled (Speedy Boykins, xQc Clips, Nov 2026):
+  "iShowSpeed Watches An Iguana Get RUN OVER In GTA 6" (142K), "xQc flies HEAD FIRST into a deck and EXPLODES"
+  (44K), "iShowSpeed FILMS A Road Rage Fight Between Two NPCs" (124K), "xQc is in LOVE with this CHINESE RADIO
+  CHANNEL" (431K), "Literally WHAT is GOING ON in GTA 6??" (216K).
+  Pattern: streamer + a strong verb + the SPECIFIC thing on screen (iguana, deck, radio channel, cows, bridge),
+  2-3 key words in CAPS. Generic titles ("LOST HIS MIND 😂🔥", "funny reaction") get almost no views.
 Rules:
 - TRUE to the clip. Never promise something that isn't in it (YouTube removes misleading titles).
 - No spoilers of the punchline; tease it.
+- Name the concrete object/place/animal/vehicle from the clip. Never write "Chat Loses It", "Chat Erupts",
+  "Instantly", "Goes Wrong", "Chaos" or "Backfires" unless nothing more specific is true: say WHAT happens.
 - Same language as the transcript (default English).
 - YouTube titles <= 70 chars (show fully on phones), no hashtags in titles, max 1 emoji.
-- thumbnail_text: 2-4 words, ALL CAPS, mark the single payoff word with *asterisks*. It is also the on-screen
-  hook, so it MUST make sense on its own to someone who knows nothing (name the topic/claim/stakes:
-  "I MADE *FORTNITE*", "5 STARS IN *10 SECONDS*"), never a fragment like "BEFORE EVERYONE".
+- thumbnail_text: 2-4 words, ALL CAPS, mark the single key word with *asterisks*. It is also the on-screen
+  hook over the first 4 s, which show the build-up just BEFORE the payoff. It must open a question the viewer
+  can only answer by watching to the end, and must NOT reveal the outcome. It must make sense on its own to
+  someone who knows nothing: name the thing at stake ("HE TRUSTED THE *BRIDGE*", "WATCH THE *COWS*",
+  "WAIT FOR THE *LANDING*", "5 STARS IN *10 SECONDS*"), never a fragment like "BEFORE EVERYONE" and never
+  the answer ("HE *CRASHED*").
 - best_start/best_end: the tightest {min_len}-{max_len}s window that contains the setup AND the payoff.
   Start on the first word of a sentence, end right after the payoff/reaction. Seconds within 0-{duration:.0f}.
 - chat_highlights: up to 6 chat lines copied EXACTLY as "user: message" from the LIVE CHAT above, that best
