@@ -5,7 +5,16 @@
 When something wild happens on stream, chat explodes a few seconds later. Clippy watches chat for that spike,
 cuts the video from ~30 s *before* it, scores how big the moment really was, and renders a 1080×1920 Short with
 a facecam stack, a hook, word-by-word captions and (for the biggest moments) the real chat reacting.
-You approve each clip before it posts, or in a live run, highlight clips that pass a safety check post by themselves.
+It posts to Instagram Reels, TikTok and YouTube Shorts on a schedule, then pulls each post's analytics to learn
+what actually goes viral. You review the borderline clips; the clear highlights that pass a safety check post themselves.
+
+### ▶ Demo: "My AI clips GTA 6 streamers while I sleep" (34 s)
+
+[![Demo: the chat spike that triggers a clip, and the analytics it learns from](docs/assets/demo-strip.jpg)](https://www.instagram.com/reel/DgBSkCRjIR9/)
+
+[Watch the video on Instagram](https://www.instagram.com/reel/DgBSkCRjIR9/). It walks through the five steps below on a real
+clip (xQc vs. a herd of cows): chat spike → AI judge (cutscene 35, crash 100) → hook cut one beat before impact →
+auto-post → analytics. Made with [Remotion](https://www.remotion.dev) from this repo's own data; source in [promo/](promo/).
 
 <p align="center">
   <img src="docs/assets/short-frame.jpg" width="240" alt="Rendered Short: facecam on top, hook banner, captions, chat column">
@@ -24,16 +33,19 @@ flowchart LR
     D --> E[Moment score<br/>chat + audio, 0–100]
     E --> F[clipfarm make<br/>Whisper · AI titles · facecam · captions · chat]
     F --> G[Queue<br/>pending → approved]
-    G -->|you approve| H[YouTube Shorts<br/>+ TikTok / IG caption packs]
+    G -->|90+ & safe, or you approve| H[Instagram Reels · TikTok draft<br/>· YouTube Shorts]
+    H --> I[clipfarm insights<br/>views · retention · audience]
+    I -->|lessons you keep| E
 ```
 
 | Step | What happens | Tech |
 |---|---|---|
 | Watch | Records each channel into 10 s segments; reads chat anonymously | streamlink, ffmpeg, Twitch IRC, yt-dlp |
 | Detect | **Volume:** chat ≥ 3× faster than the channel's own normal. **Wave:** ≥ 30 % of chatters type the same thing at once ("OOOO", "HUH"), which catches huge chats that Twitch caps at ~12 msg/s | `detector.py` |
-| Score | Chat spike (60 pts) + audio jump (40 pts): screams and explosions count | `score.py` |
+| Score | Chat spike (60 pts) + audio jump (40 pts) nominate; an AI judge watches frames + chat and rates 0–100 | `score.py`, `judge.py` |
 | Edit | Transcribe → AI picks the 15–30 s payoff window, hook and titles → finds the facecam → renders | mlx-whisper, OpenRouter, OpenCV YuNet, Pillow, ffmpeg |
-| Post | Approval queue → YouTube upload; ready-to-paste captions for TikTok / Instagram | Composio |
+| Post | Approval queue → Instagram Reel (public), TikTok (draft + caption to your phone), YouTube Short | Composio, ntfy |
+| Learn | Per-post views, % watched, 3 s hook retention, shares; audience age / country / traffic → report + proposed lessons | YouTube Analytics, IG Insights |
 
 ## Quick start
 
@@ -74,6 +86,12 @@ uv run clipfarm queue list
 uv run clipfarm queue approve <id>             # nothing is posted without this
 uv run clipfarm post --dry-run                 # shows exactly what would be sent
 uv run clipfarm post
+uv run clipfarm post --watch                   # poster only: best approved clip per slot, all day
+
+# 4. Learn and tidy up
+uv run clipfarm insights                       # analytics -> reports/insights-<date>.md + proposed lessons
+uv run clipfarm cleanup                        # lists what it would delete; --apply to free the disk
+uv run clipfarm post --youtube-backlog 2       # YouTube was resting: upload the 2 best clips it skipped
 ```
 
 **What counts as a highlight.** Chat waves (laughter, o7, emote floods) and chat speed only nominate moments. An AI
@@ -86,24 +104,45 @@ payoff (≥ 80) gets up to **+15** when chat answers as one (35–60 % of chatte
 picks to that file to teach it; the bar is `[judge] min_hype = 90`. `scripts/backtest_judge.py` re-judges reviewed
 clips and prints precision/recall against your yes/no.
 
-**Hook.** Every Short opens with a 1.5 s tease of the build-up right *before* the payoff (it ends before the
-judge's first payoff frame and 1 s before the loudest moment), under a banner that asks a question without
-giving the answer (`XQC VS THE *COW*`), then plays the clip from the start.
+**Hook.** Every Short opens with a 1.5 s tease that ends **one beat before impact**: the judge names the payoff
+moment, a second AI pass looks at frames 0.4 s apart around it to find first contact, and the tease stops 0.3 s
+before it (fallback: 1 s before the loudest moment). It runs under a banner that asks a question without giving
+the answer (`XQC VS THE *COW*`), then the clip plays from the start.
 
-**Auto-post (live run only).** With `auto_post_min_score = 70` in `[post]`, `clipfarm run` edits every highlight
-clip and uploads it to YouTube without a human step. Clips skip auto-post and wait in `queue/pending/` when:
-- the AI flags a risk (copyrighted music, sexual content, hate, harassment, a minor on screen, or an unclear
-  moment), or its safety answer is missing;
-- (posting itself is rolling: every minute the run uploads the **best waiting highlight** if at least
-  `auto_post_min_gap_min` (20) minutes passed, under `auto_post_max_per_hour` (3) and `auto_post_max_per_day` (12,
-  rolling 24 h incl. manual uploads). YouTube doesn't publish safe numbers; steady spacing looks human.
+**Auto-post.** Clips at or above `auto_post_min_score` (90) are edited and queued for posting without a human
+step. They wait in `queue/pending/` for you instead when the AI flags a risk (sexual content, hate, harassment,
+a minor on screen, an unclear moment) or its safety answer is missing. Posting is rolling: the **best waiting
+clip** goes out first, at least `auto_post_min_gap_min` apart, under `auto_post_max_per_hour` and
+`auto_post_max_per_day` (rolling 24 h, manual uploads included). With `auto_post_slots` (e.g. 19:00 / 22:00 /
+01:00 Berlin) each day's batch rotates through the slots so `clipfarm insights` can compare them; every upload
+waits a random 0–`auto_post_jitter_min` minutes so it never runs on a fixed clock.
 
-Uploads happen only inside `auto_post_window` (e.g. `"00:30-03:30"` Berlin = US evening), each after a random
-0–`auto_post_jitter_min` minute wait, so posting never runs on a fixed clock.
+`auto_platforms` picks where the poster posts: Instagram Reels go public at once; TikTok gets a **draft** in the
+app's inbox (unaudited apps can't post publicly) and the caption is pushed to your phone via
+[ntfy](https://ntfy.sh) (`NTFY_TOPIC`), so posting it is one tap. Leave `"youtube"` out to **rest the channel**
+(e.g. after a burst of uploads): clips still go to the other platforms, are marked `youtube_pending`, and
+`clipfarm post --youtube-backlog N` uploads them later, best first. Every decision is logged to
+`queue/autopost.jsonl`.
 
-Every decision is logged to `queue/autopost.jsonl`. Comment out `auto_post_min_score` to turn it off.
-`clipfarm post --watch` runs only the poster (no clipping); `clipfarm stats` prints views and likes per posted
-Short and appends them to `queue/stats.jsonl`.
+**Analytics and learning.** `clipfarm insights` (also once a day inside `post --watch`) pulls YouTube Analytics
+(views, % watched, retention at 3 s, shares, subscribers gained), Instagram Reel insights (views, reach, average
+watch time, shares, saves) and TikTok counts, joins them with each clip's judge score, kind, streamer, banner and
+post hour, and writes `reports/insights-<date>.md`: does the hype score predict reach, which kinds / streamers /
+hours / hooks hold viewers, top and bottom 5, audience age, country and traffic source. An AI then appends three
+**proposed** lessons and one thing to test next to `learnings.md`; you keep or drop them. Posts made by hand are
+matched to their clip by caption. Data: `queue/insights.jsonl`, `queue/audience.jsonl` (reports and lessons stay
+out of git).
+
+**Disk cleanup.** `clipfarm cleanup` deletes the video of posted clips after `posted_days` (time to post them by
+hand elsewhere), of skipped / rejected clips after `skipped_days`, and raw clips that never made the queue after
+`raw_days`. Source clips you reviewed are shrunk to 640 px instead, so judge backtests still run on them. Every
+`.json` stays; `approved/`, `pending/` and `failed/` are never touched. `[cleanup] auto = true` runs it hourly
+inside `post --watch`.
+
+**Review page.** `scripts/review_docs.py` builds one record per queued clip (video, score, judge's payoff,
+TikTok/IG captions) for a review page; `scripts/apply_reviews.py <exported reviews>` moves your "no" to
+`queue/skipped/` and "yes" to `queue/approved/`. `scripts/rerender_queue.py --rejudge` re-scores queued clips with
+the current judge and re-renders them with fresh titles and hooks.
 
 Clips land in `clips/<channel>/<time>_s<score>.mp4` with a `.json` holding the chat, score and spike time.
 Clips scoring below `min_score` go to `clips/<channel>/low/`.
@@ -143,14 +182,18 @@ Everything lives in [channels.toml](channels.toml):
 | `[clip]` | `length` (`auto` / `15-30` / `30-60`), `min_score`, `quality` |
 | `[detector]` | `ratio` (3.0; lower means more clips), `min_unique`, `cooldown_s` |
 | `[[channel]]` | `name` and `platform` (`twitch` / `youtube`); optional per-channel `[channel.detector]` |
-| `[post]` | `platforms`, `min_queue_score`, `tags`, `credit_template`, `youtube_privacy`, `context`, `auto_post_min_score`, `auto_post_max_per_hour` |
+| `[post]` | `platforms`, `auto_platforms`, `min_queue_score`, `tags`, `credit_template`, `context`, `auto_post_min_score`, `auto_post_max_per_day`, `auto_post_slots` |
+| `[judge]` | `min_hype` (the highlight bar, 90) |
+| `[[campaign]]` | paid clipping campaigns: accepted streamers, required hashtags, logo |
+| `[cleanup]` / `[insights]` | `auto`, and the cleanup grace periods in days |
 
 Keys go in `.env` (see [.env.example](.env.example)):
 
 | Key | For | Cost |
 |---|---|---|
 | `OPENROUTER_API_KEY` | titles, hooks, window, caption fixes, chat picks | a few cents per clip |
-| `COMPOSIO_API_KEY` | YouTube upload | free tier |
+| `COMPOSIO_API_KEY` | posting (YouTube, Instagram, TikTok) and analytics | free tier |
+| `NTFY_TOPIC` | phone push with the caption for each TikTok draft | free |
 
 Account setup for YouTube, TikTok, Instagram, Composio and Whop: [docs/account-setup.md](docs/account-setup.md).
 
@@ -171,10 +214,15 @@ src/clipfarm/
   thumb.py         thumbnails
   make.py          one-shot pipeline used by `clipfarm make`
   catchup.py       last-N-minutes scan of a live stream's VOD
+  judge.py         AI judge: frames + chat -> 0-100, payoff time, impact frame for the hook
   autopost.py      unattended highlight posting with safety gate + rate limit
-  post.py          approval queue + Composio YouTube upload
+  post.py          approval queue + Composio posting (YouTube, Instagram, TikTok draft), ntfy push
+  campaigns.py     route a clip to the paid campaign that accepts its streamer
+  insights.py      post analytics -> dataset, report, proposed lessons
+  cleanup.py       disk cleanup rules
   fonts.py         font lookup (macOS fonts, free fallbacks elsewhere)
-scripts/composio_youtube.py   connect a YouTube channel to Composio / test an upload
+scripts/                     Composio YouTube test, judge backtest, queue re-render, review page records
+promo/                        Remotion project for the demo video
 docs/                         design notes and research, account setup
 tests/                        unit tests (no network)
 ```
@@ -182,11 +230,14 @@ tests/                        unit tests (no network)
 ## Status and limits
 
 - **Verified:** live recording and clipping (Twitch, YouTube Live), VOD spike cutting, the full `make` pipeline
-  (~45 s per clip on an M4), and public-capable YouTube uploads through Composio.
+  (~45 s per clip on an M4), public YouTube and Instagram posts and TikTok drafts through Composio, and
+  analytics pulls from all three.
 - **Not verified yet:** a real live spike firing end to end without the test trigger.
 - **Mac only** for now: mlx-whisper needs Apple Silicon. Off macOS the fonts fall back to free stand-ins.
-- **Posting:** only YouTube is automatic. TikTok and Instagram APIs allow only private posts for unaudited apps,
-  so those platforms get caption files to paste by hand.
+- **Posting:** YouTube and Instagram Reels are fully automatic. TikTok's API lets unaudited apps post only
+  privately, so TikTok gets a draft in the app plus the caption on your phone; publishing it is one tap.
+- **Analytics:** Instagram audience demographics need ~100 followers before the API returns them; TikTok's API
+  gives only counts (views, likes, shares), not retention.
 - Kick isn't supported.
 
 ## Responsible use

@@ -1,54 +1,19 @@
-# Remotion video
+# Clippy demo video
 
-<p align="center">
-  <a href="https://github.com/remotion-dev/logo">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://github.com/remotion-dev/logo/raw/main/animated-logo-banner-dark.apng">
-      <img alt="Animated Remotion Logo" src="https://github.com/remotion-dev/logo/raw/main/animated-logo-banner-light.gif">
-    </picture>
-  </a>
-</p>
+Remotion project for the 34 s vertical demo "My AI clips GTA 6 streamers while I sleep"
+([watch it](https://www.instagram.com/reel/DgBSkCRjIR9/)). Seven scenes in `src/promo/scenes.tsx`, built from the
+repo's own data: real xQc chat rates, real judge scores, real view counts.
 
-Welcome to your Remotion project!
-
-## Commands
-
-**Install Dependencies**
-
-```console
-npm i --loglevel=error
+```bash
+npm i
+npx remotion studio                                   # preview / edit
+npx remotion render Promo out/demo.mp4 --codec=h264   # render
 ```
 
-**Start Preview**
-
-```console
-npm run dev
-```
-
-**Render video**
-
-```console
-npx remotion render
-```
-
-**Upgrade Remotion**
-
-```console
-npx remotion upgrade
-```
-
-## Docs
-
-Get started with Remotion by reading the [fundamentals page](https://www.remotion.dev/docs/the-fundamentals).
-
-## Help
-
-We provide help on our [Discord server](https://discord.gg/6VzzNDwUwV).
-
-## Issues
-
-Found an issue with Remotion? [File an issue here](https://github.com/remotion-dev/remotion/issues/new).
-
-## License
-
-Note that for some entities a company license is needed. [Read the terms here](https://github.com/remotion-dev/remotion/blob/main/LICENSE.md).
+- `public/cow.mp4`, `cow_hit.jpg`, `cutscene.jpg` are frames/clips of streamer footage and are git-ignored: copy a
+  rendered Short from `queue/posted/<id>/short.mp4` to `public/cow.mp4` and grab the stills with ffmpeg.
+- `public/vo/*.wav` is the voice-over, one line per scene, made locally with
+  [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) (Apache-2.0, voice `af_heart`, speed 1.1) via
+  `mlx-audio`. Scene lengths in `src/Root.tsx` / `src/promo/Promo.tsx` are set to fit each line.
+- `remotion.config.ts` uses `chrome-for-testing`: the default headless shell crashed on this Mac.
+- Loudness for social: `ffmpeg -i out/demo.mp4 -c:v copy -af loudnorm=I=-14:TP=-1.5 out/final.mp4`.
