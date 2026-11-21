@@ -111,3 +111,13 @@ def test_same_video_or_source_never_queued_twice(tmp_path, video):
     with pytest.raises(P.DuplicateItem):
         P.add(root, other, "re-edit", "xqc", CFG, source_clip="clips/xqc/a.mp4")  # same source, already posted
     assert P.add(root, other, "new", "xqc", CFG, source_clip="clips/xqc/b.mp4").video_hash
+
+
+def test_youtube_resting_skips_youtube_and_marks_it_pending(tmp_path, video):
+    root = tmp_path / "q"
+    cfg = {**CFG, "auto_platforms": ["instagram", "tiktok"]}
+    it = P.add(root, video, "xQc Loses To A COW", "xqc", cfg)
+    P.move(root, it.id, "pending", "approved")
+    out = P.post_composio(root, cfg, dry_run=True)[0]
+    assert "youtube" not in out["platforms"] and out["youtube_pending"] is True
+    assert "youtube" not in (out.get("manual") or [])

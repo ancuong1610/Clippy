@@ -78,6 +78,8 @@ def plan(queue: Path, clips: Path, posted_days: float = 3, skipped_days: float =
         stamp = d / ("result.json" if (d / "result.json").exists() else "post.json")
         if _age_days(stamp, now) < days:
             continue
+        if stamp.name == "result.json" and json.loads(stamp.read_text()).get("youtube_pending"):
+            continue  # still waiting for its YouTube upload (channel resting)
         for p in [d / "short.mp4", *d.glob("thumb*")]:
             drop(p, f"{state} > {days:g}d")
         if src and src.exists() and not (sources[src] & set(LIVE)):

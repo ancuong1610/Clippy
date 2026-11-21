@@ -11,3 +11,7 @@ assets/campaigns/
 review/previews*/
 reports/
 learnings.md
+promo/node_modules/
+promo/out/
+promo/public/*.mp4
+promo/public/*.jpg

@@ -51,3 +51,13 @@ def test_cleanup_deletes_done_and_never_queued_but_spares_live_items(tmp_path):
     assert recent / "short.mp4" not in gone                            # posted < 3 days: manual TikTok/IG window
     assert fresh not in gone
     assert not any(p.suffix == ".json" for p in gone)
+
+
+def test_cleanup_keeps_video_still_waiting_for_youtube(tmp_path):
+    q, c = tmp_path / "queue", tmp_path / "clips"
+    for s in ("approved", "pending", "failed", "posted", "skipped"):
+        (q / s).mkdir(parents=True)
+    d = _item(q, "posted", "p1", _clip(c, "a"))
+    (d / "result.json").write_text(json.dumps({"youtube_pending": True, "platforms": {}}))
+    os.utime(d / "result.json", (OLD, OLD))
+    assert d / "short.mp4" not in {a.path for a in plan(q, c)}

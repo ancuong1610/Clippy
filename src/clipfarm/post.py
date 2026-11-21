@@ -133,7 +133,8 @@ def move(root: Path, item_id: str, src: str, dst: str) -> Path:
 
 
 COMPOSIO_USER = "stream-chaos-clips"
-AUTO_PLATFORMS = {"youtube"}  # default; [post] auto_platforms = ["youtube", "instagram", "tiktok"] adds the others
+AUTO_PLATFORMS = {"youtube"}  # default; [post] auto_platforms = ["youtube", "instagram", "tiktok"] adds the others.
+# Leaving "youtube" out rests the channel: items still post elsewhere and get "youtube_pending" in result.json.
 
 
 def auto_platforms(cfg: dict) -> set[str]:
@@ -197,8 +198,9 @@ def notify(cfg: dict, title: str, body: str) -> bool:
         return False
     import httpx
     try:
-        httpx.post(f"https://ntfy.sh/{topic}", content=body.encode(),
-                   headers={"Title": title.encode("utf-8").decode("latin-1", "ignore"), "Tags": "clapper"}, timeout=15)
+        # JSON publish: UTF-8 title/body (an HTTP "Title" header can't carry "—" or emoji)
+        httpx.post("https://ntfy.sh/", json={"topic": topic, "title": title, "message": body, "tags": ["clapper"]},
+                   timeout=15).raise_for_status()
         return True
     except httpx.HTTPError:
         return False
@@ -260,6 +262,40 @@ def manual_pack(d: Path, item: PostItem, cfg: dict, platforms: list[str]) -> lis
     return written
 
 
+def post_youtube(c, d: Path, item: PostItem, cfg: dict) -> dict:
+    from composio.core.models._files import FileUploadable
+    try:
+        fu = FileUploadable.from_path(c.client, str(d / "short.mp4"), tool="YOUTUBE_MULTIPART_UPLOAD_VIDEO",
+                                      toolkit="youtube", file_upload_allowlist=[d])
+        r = _run(c, "YOUTUBE_MULTIPART_UPLOAD_VIDEO", {**youtube_args(item, cfg), "videoFile": fu.model_dump()}, cfg)
+        vid = ((r.get("data") or {}).get("video") or {}).get("id")
+        return {"ok": bool(r.get("successful") and vid), "video_id": vid,
+                "url": f"https://youtube.com/shorts/{vid}" if vid else None, "error": r.get("error")}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
+
+
+def youtube_backlog(root: Path, cfg: dict, limit: int = 1, only: str | None = None) -> list[dict]:
+    """Upload to YouTube the posted clips that skipped it while the channel was resting (best score first)."""
+    from composio import Composio
+    c = Composio(api_key=os.environ["COMPOSIO_API_KEY"])
+    todo = []
+    for d, item in items(root, "posted"):
+        f = d / "result.json"
+        res = json.loads(f.read_text()) if f.exists() else {}
+        if res.get("youtube_pending") and (d / "short.mp4").exists() and (not only or item.id == only):
+            todo.append((-(item.score or 0), d, item, res))
+    out = []
+    for _, d, item, res in sorted(todo, key=lambda x: x[0])[:limit]:
+        yt = post_youtube(c, d, item, cfg)
+        res["platforms"]["youtube"] = yt
+        if yt.get("ok"):
+            res.pop("youtube_pending", None)
+        (d / "result.json").write_text(json.dumps(res, indent=2, ensure_ascii=False))
+        out.append({"id": item.id, "title": item.title, **yt})
+    return out
+
+
 def post_composio(root: Path, cfg: dict, dry_run: bool = False, only: str | None = None) -> list[dict]:
     """YouTube (+ Instagram, TikTok draft when listed in auto_platforms) via Composio. Others -> manual pack.
     An item moves to posted/ once any platform worked (never re-posted); failed platforms get a manual pack."""
@@ -268,32 +304,18 @@ def post_composio(root: Path, cfg: dict, dry_run: bool = False, only: str | None
         if not os.getenv("COMPOSIO_API_KEY"):
             raise SystemExit("COMPOSIO_API_KEY missing — put it in .env")
         from composio import Composio
-        from composio.core.models._files import FileUploadable
         c = Composio(api_key=os.environ["COMPOSIO_API_KEY"])
     results = []
     for d, item in items(root, "approved"):
         if only and item.id != only:
             continue
-        manual = [p for p in item.platforms if p not in auto_platforms(cfg)]
+        manual = [p for p in item.platforms if p not in auto_platforms(cfg) and p != "youtube"]
         res: dict = {"id": item.id, "platforms": {}}
-        if "youtube" in item.platforms:
-            args = youtube_args(item, cfg)
-            if dry_run:
-                res["platforms"]["youtube"] = {"dry_run": True, "args": args}
-            else:
-                try:
-                    fu = FileUploadable.from_path(c.client, str(d / "short.mp4"), tool="YOUTUBE_MULTIPART_UPLOAD_VIDEO",
-                                                  toolkit="youtube", file_upload_allowlist=[d])
-                    r = c.tools.execute("YOUTUBE_MULTIPART_UPLOAD_VIDEO", {**args, "videoFile": fu.model_dump()},
-                                        user_id=cfg.get("composio_user", COMPOSIO_USER),
-                                        dangerously_skip_version_check=True)
-                    r = r if isinstance(r, dict) else r.model_dump()
-                    vid = ((r.get("data") or {}).get("video") or {}).get("id")
-                    res["platforms"]["youtube"] = {"ok": bool(r.get("successful") and vid), "video_id": vid,
-                                                   "url": f"https://youtube.com/shorts/{vid}" if vid else None,
-                                                   "error": r.get("error")}
-                except Exception as e:  # noqa: BLE001
-                    res["platforms"]["youtube"] = {"ok": False, "error": str(e)}
+        if "youtube" in item.platforms and "youtube" not in auto_platforms(cfg):
+            res["youtube_pending"] = True  # YouTube resting: `clipfarm post --youtube-backlog` uploads it later
+        elif "youtube" in item.platforms:
+            res["platforms"]["youtube"] = ({"dry_run": True, "args": youtube_args(item, cfg)} if dry_run
+                                           else post_youtube(c, d, item, cfg))
         for p, fn in (("instagram", post_instagram), ("tiktok", post_tiktok_draft)):
             if p not in item.platforms or p not in auto_platforms(cfg):
                 continue

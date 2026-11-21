@@ -293,6 +293,9 @@ def main() -> None:
     q.add_argument("--config", default="channels.toml", type=Path)
     po = sub.add_parser("post", help="post everything in queue/approved (YouTube via Composio)")
     po.add_argument("--dry-run", action="store_true", help="show what would be sent, send nothing")
+    po.add_argument("--youtube-backlog", type=int, metavar="N",
+                    help="upload N posted clips that skipped YouTube while it rested (best first)")
+    po.add_argument("--only", help="with --youtube-backlog: just this item id")
     po.add_argument("--watch", action="store_true",
                     help="poster only: keep running, upload the best approved Short when [post] spacing/window allow")
     ins = sub.add_parser("insights", help="pull post analytics (YT/IG/TikTok) into queue/insights.jsonl + write a report")
@@ -358,6 +361,10 @@ def main() -> None:
                      pcfg.get("auto_post_window", "any time"), ap_.min_gap_s / 60, ap_.max_per_hour, ap_.max_per_day,
                      ap_.jitter_s / 60, ap_.wait_reason() or "ready")
             asyncio.run(ap_.run_poster())
+            return
+        if args.cmd == "post" and args.youtube_backlog:
+            for r in P.youtube_backlog(root, pcfg, args.youtube_backlog, args.only):
+                print(json.dumps(r, ensure_ascii=False))
             return
         if args.cmd == "post":
             for r in P.post_all(root, pcfg, args.dry_run):

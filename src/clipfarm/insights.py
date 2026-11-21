@@ -283,11 +283,14 @@ def write_report(cfg: dict, ask_ai: bool = True) -> Path:
     out = Path("reports") / f"insights-{datetime.now(BERLIN):%Y-%m-%d}.md"
     out.parent.mkdir(exist_ok=True)
     out.write_text(md)
+    day = f"## {datetime.now(BERLIN):%Y-%m-%d} — PROPOSED"
+    if ask_ai and Path("learnings.md").exists() and day in Path("learnings.md").read_text():
+        ask_ai = False  # one set of proposed lessons per day
     if ask_ai:
         try:
             ls = lessons(md)
             with Path("learnings.md").open("a") as f:
-                f.write(f"\n## {datetime.now(BERLIN):%Y-%m-%d} — PROPOSED (owner: keep / drop)\n"
+                f.write(f"\n{day} (owner: keep / drop)\n"
                         + "".join(f"- {x}\n" for x in ls.get("lessons", []))
                         + f"- Next test: {ls.get('next_question')}\n")
         except Exception as e:  # noqa: BLE001 — the numbers are the product; lessons are a bonus
