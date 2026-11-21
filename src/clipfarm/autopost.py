@@ -231,7 +231,7 @@ class AutoPoster:
 
     async def run_poster(self, every_s: float = 60) -> None:
         """Rolling poster for the live run: one upload at a time, best first, spaced out."""
-        last_clean = 0.0
+        last_clean = last_insights = 0.0
         while True:
             await asyncio.sleep(every_s)
             if self.cfg.get("cleanup", {}).get("auto") and time.time() - last_clean > 3600:
@@ -243,6 +243,15 @@ class AutoPoster:
                         log.info("🧹 cleanup: %d files, freed %.2f GB", len(acts), freed / 1e9)
                 except Exception as e:  # noqa: BLE001 — never kill the live run
                     log.exception("cleanup failed: %s", e)
+            if self.cfg.get("insights", {}).get("auto") and time.time() - last_insights > 86400:
+                last_insights = time.time()
+                try:
+                    from . import insights as I
+                    await asyncio.to_thread(I.collect, self.cfg)
+                    out = await asyncio.to_thread(I.write_report, self.cfg)
+                    log.info("📊 insights: %s", out)
+                except Exception as e:  # noqa: BLE001 — never kill the live run
+                    log.exception("insights failed: %s", e)
             if self.wait_reason():
                 continue
             async with self.lock:

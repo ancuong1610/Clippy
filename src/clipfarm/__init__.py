@@ -295,6 +295,10 @@ def main() -> None:
     po.add_argument("--dry-run", action="store_true", help="show what would be sent, send nothing")
     po.add_argument("--watch", action="store_true",
                     help="poster only: keep running, upload the best approved Short when [post] spacing/window allow")
+    ins = sub.add_parser("insights", help="pull post analytics (YT/IG/TikTok) into queue/insights.jsonl + write a report")
+    ins.add_argument("--report-only", action="store_true", help="no API pulls, just rebuild the report from the data")
+    ins.add_argument("--no-ai", action="store_true", help="skip the AI-proposed lessons in learnings.md")
+    ins.add_argument("--config", default="channels.toml", type=Path)
     cl = sub.add_parser("cleanup", help="free disk: drop videos of posted / skipped / never-queued clips (dry run)")
     cl.add_argument("--apply", action="store_true", help="really delete / shrink (default: only list)")
     cl.add_argument("--config", default="channels.toml", type=Path)
@@ -314,6 +318,16 @@ def main() -> None:
     if args.cmd == "title":
         from .titles import make_titles
         print(json.dumps(make_titles(args.clip, args.streamer, args.context), indent=2, ensure_ascii=False))
+        return
+    if args.cmd == "insights":
+        from . import insights as I
+        cfg = load_config(args.config)
+        if not args.report_only:
+            rows = I.collect(cfg)
+            print(f"{len(rows)} posted clips, {sum(I.views(r) for r in rows)} views (YT+IG+TikTok)")
+        out = I.write_report(cfg, ask_ai=not args.no_ai)
+        print(out.read_text())
+        print(f"-> {out}" + ("" if args.no_ai else " · proposed lessons appended to learnings.md"))
         return
     if args.cmd == "cleanup":
         from .cleanup import run as cleanup

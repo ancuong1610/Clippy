@@ -116,6 +116,12 @@ posted_days = 3         # keep posted Shorts this long for the manual TikTok / I
 skipped_days = 1
 raw_days = 2            # raw clips that never made the queue
 
+# ---- Analytics (`clipfarm insights`; auto = once a day inside `post --watch`) ----
+# Per-post YT/IG/TikTok metrics joined with judge score, kind, streamer, hook, post hour -> queue/insights.jsonl,
+# report in reports/, AI-proposed lessons appended to learnings.md (the owner keeps or drops them).
+[insights]
+auto = true
+
 # ---- TikTok / Instagram copy-paste captions (posted by hand for now) ----
 [post.social]
 follow_line = "Follow for daily GTA 6 streamer clips"
