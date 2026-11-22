@@ -88,6 +88,7 @@ youtube_privacy = "public"
 # Platforms the poster handles itself (owner 2026-11-21). instagram = Reel with caption, public at once;
 # tiktok = draft in the TikTok app's inbox (app not audited -> no direct post); the caption goes to ntfy (NTFY_TOPIC in .env).
 auto_platforms = ["instagram", "tiktok"]   # owner 2026-11-21: YouTube resting (shadow-ban risk after 50 uploads); add "youtube" back to resume. Skipped clips: `clipfarm post --youtube-backlog N`
+instagram_story = true   # true: each Instagram Reel also goes out as a Story (same video, <=60 s)
 # tiktok_privacy = "PUBLIC_TO_EVERYONE"
 context = "GTA 6 launch stream"         # tells the AI what the stream is about (titles, hook)
 # ---- Auto-post during `clipfarm run` (approved 2026-11-18 for the GTA 6 launch) ----
@@ -137,6 +138,9 @@ handle_instagram = "@viral_streamhighlight"
 reach_tag_tiktok = "#fyp"
 reach_tag_instagram = "#gaming"
 mood_tag = "#funny"
+# TikTok only: 2 tags from Creator Search Insights, picked by view potential (any topic), replace #fyp/#funny. Refresh weekly.
+# 2026-11-22: "Brooklyn street address location information" 65.3M +1000%, "foolinlove" 15.3M
+tiktok_search_tags = ["#brooklyn", "#foolinlove"]
 
 # ---- Paid clipping campaigns (Content Rewards). A clip goes to the FIRST campaign that accepts its streamer. ----
 [[campaign]]

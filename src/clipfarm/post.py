@@ -167,7 +167,38 @@ def post_instagram(c, d: Path, item: PostItem, cfg: dict) -> dict:
     r = _run(c, "INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH", {"ig_user_id": me, "creation_id": cid, "max_wait_seconds": 240},
              cfg)
     mid = _data(r).get("id")
-    return {"ok": bool(r.get("successful") and mid), "media_id": mid, "error": r.get("error")}
+    res = {"ok": bool(r.get("successful") and mid), "media_id": mid, "error": r.get("error")}
+    if res["ok"] and cfg.get("instagram_story"):
+        res["story"] = post_instagram_story(c, d, me, cfg)
+    return res
+
+
+def post_instagram_story(c, d: Path, me: str, cfg: dict) -> dict:
+    """Same video as a Story (followers see it in the tray; a failed Story never fails the Reel). Stories cap at 60 s."""
+    from composio.core.models._files import FileUploadable
+    if video_seconds(d / "short.mp4") > 60:
+        return {"ok": False, "error": "longer than 60 s"}
+    try:
+        fu = FileUploadable.from_path(c.client, str(d / "short.mp4"), tool="INSTAGRAM_POST_IG_USER_MEDIA",
+                                      toolkit="instagram", file_upload_allowlist=[d])
+        r = _run(c, "INSTAGRAM_POST_IG_USER_MEDIA", {"ig_user_id": me, "video_file": fu.model_dump(),
+                                                     "media_type": "STORIES"}, cfg)
+        cid = _data(r).get("id")
+        if not cid:
+            return {"ok": False, "error": r.get("error") or r.get("data")}
+        r = _run(c, "INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH", {"ig_user_id": me, "creation_id": cid,
+                                                             "max_wait_seconds": 240}, cfg)
+        sid = _data(r).get("id")
+        return {"ok": bool(r.get("successful") and sid), "media_id": sid, "error": r.get("error")}
+    except Exception as e:  # noqa: BLE001 - the Story is a bonus
+        return {"ok": False, "error": str(e)[:200]}
+
+
+def video_seconds(path: Path) -> float:
+    import subprocess
+    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+                         capture_output=True, text=True).stdout.strip()
+    return float(out or 0)
 
 
 def post_tiktok_draft(c, d: Path, item: PostItem, cfg: dict, wait_s: int = 120) -> dict:
@@ -242,6 +273,11 @@ def social_caption(item: PostItem, platform: str, cfg: dict) -> str:
     st = STREAMER_TAGS.get(item.streamer.lower(), item.streamer.lower().replace(" ", ""))
     tags = ["#gta6", f"#{st}", f"#{st}clips", sc.get(f"reach_tag_{platform}", "#fyp" if platform == "tiktok" else "#gaming"),
             sc.get("mood_tag", "#funny")]
+    search = trending_tags() or sc.get("tiktok_search_tags")
+    if platform == "tiktok" and search:
+        # owner 2026-11-22: 3 channel tags + the 2 biggest/fastest-rising searches from TikTok Creator Search
+        # Insights (any topic; picked by view potential, owner refreshes them - no API) replace #fyp/#funny
+        tags = tags[:3] + [t if t.startswith("#") else f"#{t}" for t in search[:2]]
     for ct in item.campaign_hashtags:  # a campaign's exact spelling wins (#KAICENAT replaces #kaicenat)
         tags = [ct if t.lower() == ct.lower() else t for t in tags]
         if ct not in tags:
@@ -256,6 +292,20 @@ def social_caption(item: PostItem, platform: str, cfg: dict) -> str:
         cta = f"{follow} {handle}".strip() if handle else follow
     lines = [hook, credit, cta, " ".join(tags)]
     return "\n".join(lines)
+
+
+TRENDING = Path("queue/trending_tags.json")  # written daily by scripts/set_tiktok_tags.py (scheduled task)
+
+
+def trending_tags(path: Path | None = None, max_age_days: int = 3) -> list[str]:
+    """Today's 2 TikTok trend tags, or [] when the file is missing or stale (then channels.toml's list is used)."""
+    path = path or TRENDING
+    try:
+        if time.time() - path.stat().st_mtime > max_age_days * 86400:
+            return []
+        return list(json.loads(path.read_text()).get("tags", []))
+    except (OSError, ValueError):
+        return []
 
 
 def manual_pack(d: Path, item: PostItem, cfg: dict, platforms: list[str]) -> list[str]:

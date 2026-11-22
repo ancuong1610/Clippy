@@ -131,3 +131,27 @@ def test_send_line_replaces_generic_follow_cta(tmp_path, video):
     cap = P.social_caption(it, "instagram", cfg)
     assert "Send this to the friend who plays GTA like xQc" in cap and "Follow for more" not in cap
     assert it.variant is None
+
+
+def test_tiktok_search_tags_only_on_tiktok(tmp_path, monkeypatch):
+    from clipfarm import post as P
+    from clipfarm.post import PostItem, social_caption
+    monkeypatch.setattr(P, "TRENDING", tmp_path / "none.json")
+    it = PostItem(id="x", streamer="caseoh", title="t", platforms=["tiktok"])
+    cfg = {"social": {"tiktok_search_tags": ["gta6gameplay", "#a", "#b", "#c"]}}
+    tt = social_caption(it, "tiktok", cfg).splitlines()[-1].split()
+    assert tt == ["#gta6", "#caseoh", "#caseohclips", "#gta6gameplay", "#a"]
+    assert "#gta6gameplay" not in social_caption(it, "instagram", cfg)
+
+
+def test_trending_file_wins_until_stale(tmp_path, monkeypatch):
+    import json, os
+    from clipfarm import post as P
+    f = tmp_path / "t.json"
+    f.write_text(json.dumps({"tags": ["#lucia", "#huss"]}))
+    monkeypatch.setattr(P, "TRENDING", f)
+    it = P.PostItem(id="x", streamer="caseoh", title="t", platforms=["tiktok"])
+    cfg = {"social": {"tiktok_search_tags": ["#old"]}}
+    assert P.social_caption(it, "tiktok", cfg).endswith("#lucia #huss")
+    os.utime(f, (0, 0))
+    assert P.social_caption(it, "tiktok", cfg).endswith("#old")
