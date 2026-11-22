@@ -121,3 +121,13 @@ def test_youtube_resting_skips_youtube_and_marks_it_pending(tmp_path, video):
     out = P.post_composio(root, cfg, dry_run=True)[0]
     assert "youtube" not in out["platforms"] and out["youtube_pending"] is True
     assert "youtube" not in (out.get("manual") or [])
+
+
+def test_send_line_replaces_generic_follow_cta(tmp_path, video):
+    root = tmp_path / "q"
+    it = P.add(root, video, "xQc Loses To A COW", "xqc", CFG, titles={"instagram_caption": "the cow wins"})
+    cfg = {"social": {"send_line": "Send this to the friend who plays GTA like {streamer} 😭",
+                      "follow_line": "Follow for more", "handle_instagram": "@me"}}
+    cap = P.social_caption(it, "instagram", cfg)
+    assert "Send this to the friend who plays GTA like xQc" in cap and "Follow for more" not in cap
+    assert it.variant is None

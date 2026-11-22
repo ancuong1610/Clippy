@@ -41,6 +41,7 @@ class PostItem:
     instagram_caption: str | None = None
     video_hash: str | None = None  # sha1 of short.mp4: the same video is never queued twice
     campaign: str | None = None  # Content Rewards campaign this clip is made for (see campaigns.py)
+    variant: str | None = None  # lab test label (e.g. "vo_intro"); `clipfarm insights` compares variants
     campaign_hashtags: list[str] = field(default_factory=list)  # required in every caption
     created: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -247,9 +248,13 @@ def social_caption(item: PostItem, platform: str, cfg: dict) -> str:
             tags.insert(len(tags) - 1, ct)
     tags = list(dict.fromkeys(tags))[:5] if platform == "instagram" else list(dict.fromkeys(tags))
     credit = f"🎥 {DISPLAY.get(item.streamer.lower(), item.streamer)} live on stream"
-    follow = sc.get("follow_line", "Follow for daily GTA 6 streamer clips")
-    handle = sc.get(f"handle_{platform}")
-    lines = [hook, credit, f"{follow} {handle}".strip() if handle else follow, " ".join(tags)]
+    name = DISPLAY.get(item.streamer.lower(), item.streamer)
+    if sc.get("send_line"):  # a named send prompt earns DM shares; a generic "follow for more" reads as bait
+        cta = sc["send_line"].format(streamer=name)
+    else:
+        follow, handle = sc.get("follow_line", "Follow for daily GTA 6 streamer clips"), sc.get(f"handle_{platform}")
+        cta = f"{follow} {handle}".strip() if handle else follow
+    lines = [hook, credit, cta, " ".join(tags)]
     return "\n".join(lines)
 
 

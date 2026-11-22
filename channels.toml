@@ -96,14 +96,14 @@ context = "GTA 6 launch stream"         # tells the AI what the stream is about 
 # queue/pending/ for `clipfarm queue approve`. Log: queue/autopost.jsonl. Comment out to turn off.
 auto_post_min_score = 90            # = judge hype (0-100) when [judge] is on
 auto_post_max_per_hour = 6
-auto_post_min_gap_min = 10               # owner: post the day's batch back to back, ~10 min apart
+auto_post_min_gap_min = 60               # 2026-11-22: was 10; 9 Reels in 3 h looked like a burst -> ~1 h apart
 auto_post_scene_min = 3                 # one clip per scene: same streamer within 3 min -> only the best
 auto_post_max_per_day = 4               # owner 2026-11-21: 3-5/day while growing; best clips first
 auto_post_window = "18:00-04:00"        # used when auto_post_slots is empty
 # Time-slot test (Berlin time): each day posts its batch inside the next slot in turn; compare views per slot with
 # `clipfarm stats`, then keep the best slot only (e.g. auto_post_slots = ["22:00"]).
 auto_post_slots = ["19:00", "22:00", "01:00"]   # = 13:00 / 16:00 / 19:00 US Eastern
-auto_post_slot_min = 60
+auto_post_slot_min = 240                # batch spread over 4 h from the slot start
 auto_post_jitter_min = 3                # small random wait so posts are not on an exact clock
 # rolling 24 h incl. manual uploads; YouTube's own limit is unpublished
 
@@ -130,7 +130,8 @@ auto = true
 
 # ---- TikTok / Instagram copy-paste captions (posted by hand for now) ----
 [post.social]
-follow_line = "Follow for daily GTA 6 streamer clips"
+follow_line = "Follow for daily GTA 6 streamer clips"   # used only when send_line is unset
+send_line = "Send this to the friend who plays GTA like {streamer} 😭"   # 2026-11-22: 0 shares on 14 Reels -> send prompt
 handle_tiktok = "@cathevuottroi1610"         # the TikTok account connected in Composio (2026-11-21)
 handle_instagram = "@viral_streamhighlight"
 reach_tag_tiktok = "#fyp"

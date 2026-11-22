@@ -43,7 +43,7 @@ def features(d: Path, item: P.PostItem) -> dict:
             "kind": j.get("kind"), "cutscene": j.get("cutscene"), "streamer_caused": j.get("streamer_caused"),
             **{k: j.get(k) for k in ("payoff_pts", "stakes", "legible", "surprise", "visual", "unison")},
             "banner": t.get("thumbnail_text"), "hook_at": sj.get("hook_at"), "campaign": item.campaign,
-            "judge_version": "v2" if "payoff_pts" in j else "v1"}
+            "judge_version": "v2" if "payoff_pts" in j else "v1", "variant": item.variant or "base"}
 
 
 def _norm(s: str) -> str:
@@ -246,7 +246,7 @@ def report(rows: list[dict], audience: dict | None = None) -> str:
                f"{MIN_VIEWS_FOR_CURVE}+ views): mean {st.mean(r['yt_hook_ret'] for r in hooked):.2f} "
                "(> 1 means people rewatch the start)", ""]
     for key, name in (("kind", "Clip kind"), ("streamer", "Streamer"), ("post_hour_berlin", "Post hour (Berlin)"),
-                      ("judge_version", "Judge version")):
+                      ("judge_version", "Judge version"), ("variant", "Lab variant")):
         g = group(rows, key)
         if g:
             md += [f"## {name}", "| value | clips | median views | YT % watched (median; >100 = loops) | hook ret. |", "|---|---|---|---|---|"]
