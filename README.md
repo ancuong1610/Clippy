@@ -91,6 +91,8 @@ uv run clipfarm post --watch                   # poster only: best approved clip
 # 4. Learn and tidy up
 uv run clipfarm insights                       # analytics -> reports/insights-<date>.md + proposed lessons
 uv run clipfarm cleanup                        # lists what it would delete; --apply to free the disk
+uv run clipfarm rewards                        # paid GTA VI campaigns we fit + clips to submit
+uv run clipfarm rewards --mark <id>            # record that you submitted this clip
 uv run clipfarm post --youtube-backlog 2       # YouTube was resting: upload the 2 best clips it skipped
 ```
 
@@ -132,6 +134,16 @@ hours / hooks hold viewers, top and bottom 5, audience age, country and traffic 
 **proposed** lessons and one thing to test next to `learnings.md`; you keep or drop them. Posts made by hand are
 matched to their clip by caption. Data: `queue/insights.jsonl`, `queue/audience.jsonl` (reports and lessons stay
 out of git).
+
+**Paid campaigns (Content Rewards / Whop).** `clipfarm rewards` (also daily inside `post --watch`) reads the
+public GTA VI campaign list on contentrewards.com and each campaign's public page — never its `/api/`, which
+robots.txt disallows — and writes `reports/campaigns-<date>.md`: every live campaign with its pay (CPM rate or pool),
+budget left, the views a clip needs before it earns, the views a creator needs to share a pool, whether it fits us
+(one of our streamers, any GTA content, or a streamer we don't watch yet) and whether our typical views reach it.
+For new campaigns that fit, an AI drafts the `[[campaign]]` block (hashtags, logo, streamers) — **not applied**:
+joining a campaign and accepting its terms stay your call. The report also lists our posted clips routed to a
+campaign with their links and views, and each campaign's top clips (what wins there). Submitting is manual or via
+Content Rewards' own *auto-track* for connected TikTok / Instagram accounts; `--mark` records a submission.
 
 **Disk cleanup.** `clipfarm cleanup` deletes the video of posted clips after `posted_days` (time to post them by
 hand elsewhere), of skipped / rejected clips after `skipped_days`, and raw clips that never made the queue after
@@ -185,7 +197,7 @@ Everything lives in [channels.toml](channels.toml):
 | `[post]` | `platforms`, `auto_platforms`, `min_queue_score`, `tags`, `credit_template`, `context`, `auto_post_min_score`, `auto_post_max_per_day`, `auto_post_slots` |
 | `[judge]` | `min_hype` (the highlight bar, 90) |
 | `[[campaign]]` | paid clipping campaigns: accepted streamers, required hashtags, logo |
-| `[cleanup]` / `[insights]` | `auto`, and the cleanup grace periods in days |
+| `[cleanup]` / `[insights]` / `[rewards]` | `auto`, and the cleanup grace periods in days |
 
 Keys go in `.env` (see [.env.example](.env.example)):
 
@@ -220,6 +232,7 @@ src/clipfarm/
   campaigns.py     route a clip to the paid campaign that accepts its streamer
   insights.py      post analytics -> dataset, report, proposed lessons
   cleanup.py       disk cleanup rules
+  rewards.py       Content Rewards campaigns: discover, match, draft config, clips to submit
   fonts.py         font lookup (macOS fonts, free fallbacks elsewhere)
 scripts/                     Composio YouTube test, judge backtest, queue re-render, review page records
 promo/                        Remotion project for the demo video

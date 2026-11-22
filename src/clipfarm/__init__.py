@@ -302,6 +302,10 @@ def main() -> None:
     ins.add_argument("--report-only", action="store_true", help="no API pulls, just rebuild the report from the data")
     ins.add_argument("--no-ai", action="store_true", help="skip the AI-proposed lessons in learnings.md")
     ins.add_argument("--config", default="channels.toml", type=Path)
+    rw = sub.add_parser("rewards", help="Content Rewards: GTA VI campaigns we fit, AI-drafted config, clips to submit")
+    rw.add_argument("--mark", metavar="ITEM_ID", help="record that this posted clip was submitted to its campaign")
+    rw.add_argument("--no-ai", action="store_true", help="skip AI-drafted config for new campaigns")
+    rw.add_argument("--config", default="channels.toml", type=Path)
     cl = sub.add_parser("cleanup", help="free disk: drop videos of posted / skipped / never-queued clips (dry run)")
     cl.add_argument("--apply", action="store_true", help="really delete / shrink (default: only list)")
     cl.add_argument("--config", default="channels.toml", type=Path)
@@ -331,6 +335,17 @@ def main() -> None:
         out = I.write_report(cfg, ask_ai=not args.no_ai)
         print(out.read_text())
         print(f"-> {out}" + ("" if args.no_ai else " · proposed lessons appended to learnings.md"))
+        return
+    if args.cmd == "rewards":
+        from . import rewards as R
+        cfg = load_config(args.config)
+        if args.mark:
+            R.mark_submitted(Path(cfg.get("post", {}).get("queue_dir", "queue")), args.mark)
+            print(f"marked {args.mark} as submitted")
+            return
+        out, camps = R.run(cfg, ask_ai=not args.no_ai)
+        print(out.read_text())
+        print(f"-> {out} ({len(camps)} campaigns)")
         return
     if args.cmd == "cleanup":
         from .cleanup import run as cleanup

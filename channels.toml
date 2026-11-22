@@ -122,6 +122,12 @@ raw_days = 2            # raw clips that never made the queue
 [insights]
 auto = true
 
+# ---- Content Rewards (`clipfarm rewards`; auto = daily, right after insights, inside `post --watch`) ----
+# Reads the public GTA VI campaign list, matches campaigns to our streamers, drafts config for new ones (never joins
+# or submits by itself) -> reports/campaigns-<date>.md + a phone push.
+[rewards]
+auto = true
+
 # ---- TikTok / Instagram copy-paste captions (posted by hand for now) ----
 [post.social]
 follow_line = "Follow for daily GTA 6 streamer clips"

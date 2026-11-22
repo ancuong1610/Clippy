@@ -186,11 +186,11 @@ def post_tiktok_draft(c, d: Path, item: PostItem, cfg: dict, wait_s: int = 120) 
             break
     ok = status in ("SEND_TO_USER_INBOX", "PUBLISH_COMPLETE")
     if ok:
-        notify(cfg, f"TikTok draft: {item.title}", social_caption(item, "tiktok", cfg))
+        notify(cfg, f"TikTok draft: {item.title}", social_caption(item, "tiktok", cfg), click="https://www.tiktok.com/")
     return {"ok": ok, "draft": True, "publish_id": pid, "status": status}
 
 
-def notify(cfg: dict, title: str, body: str) -> bool:
+def notify(cfg: dict, title: str, body: str, click: str | None = None) -> bool:
     """Push to the owner's phone via ntfy.sh (NTFY_TOPIC in .env; the ntfy app subscribes to that topic).
     Only captions go there (public anyway once posted) — never anything private."""
     topic = cfg.get("ntfy_topic") or os.getenv("NTFY_TOPIC")
@@ -199,8 +199,10 @@ def notify(cfg: dict, title: str, body: str) -> bool:
     import httpx
     try:
         # JSON publish: UTF-8 title/body (an HTTP "Title" header can't carry "—" or emoji)
-        httpx.post("https://ntfy.sh/", json={"topic": topic, "title": title, "message": body, "tags": ["clapper"]},
-                   timeout=15).raise_for_status()
+        msg = {"topic": topic, "title": title, "message": body, "tags": ["clapper"]}
+        if click:
+            msg["click"] = click  # tapping the notification opens this (e.g. the TikTok app)
+        httpx.post("https://ntfy.sh/", json=msg, timeout=15).raise_for_status()
         return True
     except httpx.HTTPError:
         return False

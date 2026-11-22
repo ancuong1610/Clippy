@@ -250,6 +250,13 @@ class AutoPoster:
                     await asyncio.to_thread(I.collect, self.cfg)
                     out = await asyncio.to_thread(I.write_report, self.cfg)
                     log.info("📊 insights: %s", out)
+                    if self.cfg.get("rewards", {}).get("auto"):
+                        from . import rewards as R
+                        rep, camps = await asyncio.to_thread(R.run, self.cfg)
+                        log.info("💰 campaigns: %d live -> %s", len(camps), rep)
+                        P.notify(self.pcfg, f"Content Rewards: {len(camps)} GTA VI campaigns",
+                                 f"Report: {rep}. New ones that fit us have a draft config inside; join them on "
+                                 "Content Rewards first, then paste the config into channels.toml.")
                 except Exception as e:  # noqa: BLE001 — never kill the live run
                     log.exception("insights failed: %s", e)
             if self.wait_reason():

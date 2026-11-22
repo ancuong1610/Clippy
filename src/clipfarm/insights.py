@@ -93,13 +93,14 @@ def _yt(c, cfg: dict, ids: list[str], start: str, end: str) -> dict[str, dict]:
 def _ig(c, cfg: dict) -> list[dict]:
     me = P._data(P._run(c, "INSTAGRAM_GET_USER_INFO", {}, cfg)).get("id")
     media = P._data(P._run(c, "INSTAGRAM_GET_IG_USER_MEDIA", {"ig_user_id": me, "limit": 100,
-                                                              "fields": "id,caption,timestamp,media_product_type"}, cfg))
+                                                              "fields": "id,caption,timestamp,media_product_type,permalink"}, cfg))
     out = []
     for m in media.get("data") or []:
         r = P._run(c, "INSTAGRAM_GET_IG_MEDIA_INSIGHTS", {"ig_media_id": m["id"], "metric": [
             "views", "reach", "likes", "comments", "shares", "saved", "ig_reels_avg_watch_time"]}, cfg)
         vals = {x["name"]: x["values"][0]["value"] for x in (P._data(r).get("data") or []) if x.get("values")}
-        out.append({"ig_media_id": m["id"], "caption": m.get("caption") or "", "posted": m.get("timestamp"),
+        out.append({"ig_media_id": m["id"], "ig_url": m.get("permalink"), "caption": m.get("caption") or "",
+                    "posted": m.get("timestamp"),
                     "ig_views": vals.get("views"), "ig_reach": vals.get("reach"), "ig_likes": vals.get("likes"),
                     "ig_comments": vals.get("comments"), "ig_shares": vals.get("shares"),
                     "ig_saves": vals.get("saved"),
@@ -113,7 +114,7 @@ def _tt(c, cfg: dict) -> list[dict]:
     for _ in range(10):
         r = P._data(P._run(c, "TIKTOK_LIST_VIDEOS", {"max_count": 20, **({"cursor": cursor} if cursor else {})}, cfg))
         for v in r.get("videos") or []:
-            out.append({"tt_id": v.get("id"), "caption": v.get("video_description") or v.get("title") or "",
+            out.append({"tt_id": v.get("id"), "tt_url": v.get("share_url") or v.get("embed_link"), "caption": v.get("video_description") or v.get("title") or "",
                         "posted": v.get("create_time"), "tt_views": v.get("view_count"),
                         "tt_likes": v.get("like_count"), "tt_comments": v.get("comment_count"),
                         "tt_shares": v.get("share_count")})
