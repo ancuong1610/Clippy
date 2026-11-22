@@ -389,3 +389,66 @@ export const SceneCta: React.FC = () => {
     </Bg>
   );
 };
+
+// ------------------------------------------------------------------ 1b. snapback: the real problem (12 h -> 30 s)
+export const SceneSnap: React.FC = () => {
+  const f = useCurrentFrame();
+  const at = 0.63; // where the moment sits in the stream bar
+  const zoom = interpolate(f, [95, 120], [0, 1], { ...clamp, easing: Easing.bezier(0.16, 1, 0.3, 1) });
+  return (
+    <Bg>
+      <Vo id="snap" />
+      <Headline text={"But *clipping* isn't the hard part."} size={88} />
+      <Headline text={"Finding the *30 seconds* that go viral is."} at={62} size={64} top={400} />
+      {/* the whole stream */}
+      <div style={{ position: "absolute", left: 80, right: 80, top: 720, ...useIn(20) }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 36, fontWeight: 700, color: C.dim, marginBottom: 16 }}>
+          <span>0:00:00</span>
+          <span>one stream</span>
+          <span>12:00:00</span>
+        </div>
+        <div style={{ position: "relative", height: 90, borderRadius: 14, background: C.line, overflow: "hidden" }}>
+          {Array.from({ length: 48 }).map((_, i) => (
+            <div key={i} style={{ position: "absolute", left: `${(i / 48) * 100}%`, top: 0, bottom: 0, width: 2, background: C.bg, opacity: 0.6 }} />
+          ))}
+          <div
+            style={{
+              position: "absolute",
+              left: `${at * 100}%`,
+              top: 0,
+              bottom: 0,
+              width: 10,
+              background: C.accent,
+              opacity: interpolate(f, [70, 76], [0, 1], clamp),
+              boxShadow: `0 0 ${interpolate(f % 20, [0, 10, 20], [10, 30, 10])}px ${C.accent}`,
+            }}
+          />
+        </div>
+      </div>
+      {/* zoom lines from the sliver to the moment */}
+      <svg style={{ position: "absolute", left: 0, top: 0, width: 1080, height: 1920, opacity: zoom }}>
+        <line x1={80 + at * 920} y1={860} x2={190} y2={1040} stroke={C.accent} strokeWidth={4} strokeDasharray="10 10" />
+        <line x1={90 + at * 920} y1={860} x2={890} y2={1040} stroke={C.accent} strokeWidth={4} strokeDasharray="10 10" />
+      </svg>
+      <div
+        style={{
+          position: "absolute",
+          left: 190,
+          right: 190,
+          top: 1040,
+          height: 560,
+          borderRadius: 28,
+          overflow: "hidden",
+          border: `5px solid ${C.accent}`,
+          opacity: zoom,
+          scale: interpolate(zoom, [0, 1], [0.7, 1]),
+        }}
+      >
+        <Img src={staticFile("cow_hit.jpg")} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        <div style={{ position: "absolute", left: 24, bottom: 20, fontSize: 52, fontWeight: 900, color: C.text, background: C.bg, padding: "6px 18px", borderRadius: 12 }}>
+          0:30 <span style={{ color: C.accent }}>that matters</span>
+        </div>
+      </div>
+    </Bg>
+  );
+};

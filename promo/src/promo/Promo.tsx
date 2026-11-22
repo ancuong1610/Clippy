@@ -2,7 +2,7 @@ import { fade } from "@remotion/transitions/fade";
 import { slide } from "@remotion/transitions/slide";
 import { linearTiming, TransitionSeries } from "@remotion/transitions";
 import React from "react";
-import { SceneChat, SceneCta, SceneCut, SceneHook, SceneJudge, SceneLearn, ScenePost } from "./scenes";
+import { SceneChat, SceneCta, SceneCut, SceneHook, SceneJudge, SceneLearn, ScenePost, SceneSnap } from "./scenes";
 
 const T = 8; // transition frames
 
@@ -12,6 +12,10 @@ export const Promo: React.FC = () => (
       <SceneHook />
     </TransitionSeries.Sequence>
     <TransitionSeries.Transition presentation={slide({ direction: "from-bottom" })} timing={linearTiming({ durationInFrames: T })} />
+    <TransitionSeries.Sequence durationInFrames={220} name="Snap">
+      <SceneSnap />
+    </TransitionSeries.Sequence>
+    <TransitionSeries.Transition presentation={slide({ direction: "from-right" })} timing={linearTiming({ durationInFrames: T })} />
     <TransitionSeries.Sequence durationInFrames={140} name="Chat">
       <SceneChat />
     </TransitionSeries.Sequence>
@@ -24,7 +28,7 @@ export const Promo: React.FC = () => (
       <SceneCut />
     </TransitionSeries.Sequence>
     <TransitionSeries.Transition presentation={slide({ direction: "from-right" })} timing={linearTiming({ durationInFrames: T })} />
-    <TransitionSeries.Sequence durationInFrames={190} name="Post">
+    <TransitionSeries.Sequence durationInFrames={165} name="Post">
       <ScenePost />
     </TransitionSeries.Sequence>
     <TransitionSeries.Transition presentation={slide({ direction: "from-right" })} timing={linearTiming({ durationInFrames: T })} />
