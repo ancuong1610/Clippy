@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Runs `clipfarm post --watch` (rolling poster + hourly cleanup + daily insights/rewards) in the logged-in
+     GUI session, so posting continues when the Claude app is closed. Restarted if it exits.
+     Install: scripts/install_poster_agent.sh   Remove: scripts/install_poster_agent.sh remove -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.clippy.poster</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/zsh</string><string>__ROOT__/scripts/run_poster.sh</string></array>
+  <key>WorkingDirectory</key><string>__ROOT__</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>300</integer>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/clippy-poster.out</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/clippy-poster.err</string>
+</dict>
+</plist>
