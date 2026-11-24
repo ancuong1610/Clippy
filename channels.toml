@@ -103,8 +103,8 @@ auto_post_max_per_day = 4               # owner 2026-11-21: 3-5/day while growin
 auto_post_window = "18:00-04:00"        # used when auto_post_slots is empty
 # Time-slot test (Berlin time): each day posts its batch inside the next slot in turn; compare views per slot with
 # `clipfarm stats`, then keep the best slot only (e.g. auto_post_slots = ["22:00"]).
-auto_post_slots = ["19:00", "22:00", "01:00"]   # = 13:00 / 16:00 / 19:00 US Eastern
-auto_post_slot_min = 240                # batch spread over 4 h from the slot start
+auto_post_slots = ["21:00"]   # owner 2026-11-24: one window every day, 21:00-24:00 Berlin (= 15:00-18:00 US Eastern); no rotation
+auto_post_slot_min = 180                # owner 2026-11-24: window 21:00-24:00 (3 h); at 60 min gap = up to 3 clips/day
 auto_post_jitter_min = 3                # small random wait so posts are not on an exact clock
 # rolling 24 h incl. manual uploads; YouTube's own limit is unpublished
 
