@@ -156,6 +156,28 @@ TikTok/IG captions) for a review page; `scripts/apply_reviews.py <exported revie
 `queue/skipped/` and "yes" to `queue/approved/`. `scripts/rerender_queue.py --rejudge` re-scores queued clips with
 the current judge and re-renders them with fresh titles and hooks.
 
+### Daily review batch (calibration, until 2026-12-08)
+
+Run `uv run python scripts/daily_review_batch.py` from the repo root. It scans up to eight finished Twitch VODs
+per day across active channels, judges the strongest spikes, and queues up to 40 clips with hype ≥ 60 for review
+in `queue/pending/`. `--dry-run` lists the VODs before downloading, and `--from-existing` uses clips that were
+already judged. `queue/calibration_state.json` tracks scanned VODs and batch totals.
+
+Review docs land in `review/batches/<date>/docs/` with 480 px previews in `review/previews_v3/`.
+`uv run python scripts/posted_review_docs.py` prepares `review/batches/posted/docs/` with the latest saved
+platform views. The review page uploader fills in the video URLs after uploading previews.
+
+After exporting the reviews, run `uv run python scripts/apply_reviews.py <reviews_dir>` to move yes to approved and no to
+skipped. The calibration report proposes judge examples for the owner to approve.
+
+Run `uv run python scripts/calibrate_hype.py` to write `reports/calibration-<date>.md`. Add `--reviews DIR`
+to include owner decisions. The `perf_score` averages the available cohort percentiles for Instagram views,
+TikTok views, Instagram watch ratio, combined shares per 1,000 views, and Instagram saves per 1,000 views.
+The cohort includes clips posted at least 48 hours before the newest saved snapshot. TikTok's Display API
+provides views, likes, comments, and shares as performance metrics. Watch time and retention are unavailable
+through that API, so Instagram's average watch time divided by clip length supplies the retention signal.
+[TikTok Display API video fields](https://developers.tiktok.com/docs/en/tiktok-api-v2-video-object/)
+
 Clips land in `clips/<channel>/<time>_s<score>.mp4` with a `.json` holding the chat, score and spike time.
 Clips scoring below `min_score` go to `clips/<channel>/low/`.
 

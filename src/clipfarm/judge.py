@@ -33,8 +33,11 @@ What the owner's approvals and the most-viewed GTA 6 streamer clips have in comm
   animal attack, the streamer's own fail (misclick, lost progress, mission failed);
 - or a WEIRD/UNEXPECTED world moment (iguana run over, NPCs in a road-rage fight, a bizarre radio channel);
 - or STAKES: the streamer loses something, does something for the first time, or it connects to his own life.
-What the owner rejected: story cutscenes and dialogue (strangers don't know the plot and can't follow the
+What the owner rejected: ordinary story cutscenes and dialogue (strangers don't know the plot and can't follow the
 joke), NPC small talk, menus, the streamer just talking, chat spamming LOL at something you can't see.
+Exceptions that can score as highlights: the game's biggest story moments (ending, final mission, main character
+death or betrayal) WITH a strong visible streamer reaction, and discoveries of a new mechanic or secret shown
+on screen. Set story_reaction true only for the major story moment with a strong visible streamer reaction.
 
 Score four parts 0-10 each:
 - payoff: how big and clear the on-screen event is (10 = plane explodes into a dock; 2 = people talking).
@@ -46,8 +49,8 @@ Then the overall hype 0-100:
 - 70-89: a clear funny/notable moment that is smaller or needs a little context.
 - 40-69: mild: gym, shopping, outfits, driving around, NPC talk, menus, the streamer just talking.
 - 0-39: nothing visible happens, loading/black screens, technical issues.
-STORY CUTSCENES: max 80, and usually 30-60, because strangers can't follow them. Only when the streamer
-himself causes the chaos (shoots the characters mid-scene) may a cutscene clip go above 80.
+STORY CUTSCENES: max 80, and usually 30-60, because strangers can't follow them. A cutscene may go above 80
+when the streamer causes the chaos (shoots the characters mid-scene) or the story_reaction exception applies.
 OFF-TOPIC: this channel only posts GTA 6. If the clip is not GTA 6, score it 20 or less and set "gta6": false.
 Chat tells you WHAT happened (e.g. "shark", "o7 crash") — use it to find the moment in the frames. Chat
 spamming memes alone does NOT make a highlight; the payoff must be visible on screen.
@@ -56,7 +59,7 @@ LIVE CHAT (seconds from clip start):
 {chat}
 
 Return ONLY JSON: {{"hype": <0-100>, "payoff_pts": <0-10>, "stakes": <0-10>, "legible": <0-10>, "surprise": <0-10>,
-"gta6": <true|false>, "cutscene": <true|false>, "streamer_caused": <true|false>,
+"gta6": <true|false>, "cutscene": <true|false>, "streamer_caused": <true|false>, "story_reaction": <true|false>,
 "kind": "<crash_fail|stunt|weird_world|streamer_lore|first_time|action|cutscene|talk|idle>",
 "payoff_at": <time in seconds of the FIRST frame where the payoff is visible, or null>,
 "payoff": "<what visibly happens, max 15 words>", "why": "<one sentence: why this score vs the reference moments>"}}"""
@@ -107,7 +110,7 @@ def final_score(verdict: dict, chat_timed: list[dict]) -> dict:
     """Judge (what's on screen) + up to +15 when chat answers as one, but only for gameplay that already shows
     a real payoff (visual >= 80). Owner's review of 79 clips (2026-11-21): the unison bonus pushed cutscene
     dialogue that chat laughed at over the bar (approved 7/35 cutscenes vs 19/31 gameplay), so cutscenes get no
-    bonus and stay <= 80 unless the streamer caused the chaos himself."""
+    bonus and stay <= 80 unless the streamer caused the chaos or visibly reacts strongly to a major story moment."""
     from .detector import mood_peak, unison_bonus
     share, mood = mood_peak(chat_timed)
     visual = verdict["hype"]
@@ -115,7 +118,7 @@ def final_score(verdict: dict, chat_timed: list[dict]) -> dict:
     ok = verdict.get("gta6") is not False and not cut and visual >= 80
     bonus = unison_bonus(share) if ok else 0.0
     hype = min(100, round(visual + bonus))
-    if cut and not verdict.get("streamer_caused"):
+    if cut and not verdict.get("streamer_caused") and verdict.get("story_reaction") is not True:
         hype = min(hype, 80)
     return {**verdict, "visual": visual, "unison": share, "mood": mood, "bonus": bonus, "hype": int(hype)}
 

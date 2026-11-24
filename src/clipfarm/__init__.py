@@ -255,7 +255,7 @@ def main() -> None:
     e = sub.add_parser("edit", help="make a 1080x1920 Short with word captions from a raw clip")
     e.add_argument("clip", type=Path)
     e.add_argument("--layout", choices=["blur", "square", "stack"], default="blur")
-    e.add_argument("--captions", choices=["karaoke", "hormozi", "classic"], default="karaoke")
+    e.add_argument("--captions", choices=["karaoke", "hormozi", "classic", "punch"], default="karaoke")
     e.add_argument("--facecam", help="stack layout: x,y,w,h as fractions, e.g. 0,0.69,0.22,0.31")
     e.add_argument("--title", default=None, help="top hook text (default: thumbnail_text from `clipfarm title`)")
     e.add_argument("--out", type=Path, default=None)
@@ -275,7 +275,9 @@ def main() -> None:
     mk.add_argument("--streamer", default=None)
     mk.add_argument("--context", default="GTA 6 livestream")
     mk.add_argument("--layout", choices=["auto", "stack", "blur", "square"], default="auto")
-    mk.add_argument("--captions", choices=["karaoke", "hormozi", "classic"], default="karaoke")
+    mk.add_argument("--captions", choices=["karaoke", "hormozi", "classic", "punch"],
+                    help="override [edit] captions from the channel config")
+    mk.add_argument("--config", default=Path("channels.toml"), type=Path)
     mk.add_argument("--out", type=Path, default=None, help="output folder (default: next to the clip)")
     mk.add_argument("--chat", choices=["auto", "on", "off"], default="auto",
                     help="Twitch chat column: auto = only for score >= 70")
@@ -316,7 +318,8 @@ def main() -> None:
     if args.cmd == "make":
         from .make import make
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
-        r = make(args.clip, args.streamer, args.context, args.layout, args.captions, args.out, args.chat)
+        r = make(args.clip, args.streamer, args.context, args.layout, args.captions, args.out, args.chat,
+                 config_path=args.config)
         print(json.dumps({k: r[k] for k in ("short", "thumbnails", "window", "layout", "facecam", "caption_fixes",
                                             "chat_overlay")},
                          indent=2, ensure_ascii=False))

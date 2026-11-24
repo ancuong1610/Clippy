@@ -42,7 +42,18 @@ Rules:
   someone who knows nothing: name the thing at stake ("HE TRUSTED THE *BRIDGE*", "WATCH THE *COWS*",
   "WAIT FOR THE *LANDING*", "5 STARS IN *10 SECONDS*"), never a fragment like "BEFORE EVERYONE" and never
   the answer ("HE *CRASHED*").
+- label: a plain statement of what the viewer is watching, 3-7 words in ALL CAPS. No question, teaser,
+  or answer-spoiling beyond what the opening hook already shows. Examples: "SPEED REACTS TO THE GTA 6 ENDING",
+  "LACY GETS SHOVED OUT OF HIS CAR". Name the specific thing that makes this clip worth watching (the stunt,
+  the stakes, the weird event: "STABLERONALDO RIDES HIS CAR ON A WALL"), never a generic activity
+  ("DRIVES IN GTA 6", "PLAYS GTA 6", "LAUNCH STREAM") and never the stream itself. Context plus a lean: when the
+  clip has a stake (a number, money, risk, a first time, something unexpected), put it in the label
+  ("LACY DROPS THE $90K BAG"), without giving away the outcome.
 - best_start/best_end: the tightest {min_len}-{max_len}s window that contains the setup AND the payoff.
+  best_start must include the setup a stranger needs to understand the payoff (who/what is happening),
+  typically 3-10 s before the event, with no dead air. Modern story arc (owner 2026-11-24): the first 5 s of
+  the window must already make the situation clear (start at 70/100, not at 0) and the first peak should land
+  within about 10 s; if the setup is long, start later and let the banner give the context instead.
   Start on the first word of a sentence, end right after the payoff/reaction. Seconds within 0-{duration:.0f}.
 - chat_highlights: up to 6 chat lines copied EXACTLY as "user: message" from the LIVE CHAT above, that best
   show the crowd reacting to the payoff (funny, shocked, hype). NEVER pick slurs, hate, sexual content,
@@ -65,6 +76,7 @@ Return ONLY JSON:
   "tiktok_caption": "<1 line hook + 3-5 hashtags, <= 150 chars>",
   "instagram_caption": "<1-2 lines + 3-5 hashtags>",
   "thumbnail_text": "<1-4 words e.g. HE GOT *CAUGHT*>",
+  "label": "<3-7 word statement>",
   "what_happened": "<1 neutral sentence, for the human reviewer>",
   "best_start": <seconds>,
   "best_end": <seconds>,
@@ -138,11 +150,29 @@ def pick_window(t: dict, duration: float, words: list[dict], min_len: float = 12
     return round(s, 2), round(e, 2)
 
 
+def label_text(t: dict) -> str:
+    """Normalize a statement label, or shorten the best YouTube title for older metadata."""
+    def words(text: str) -> list[str]:
+        return [word.strip("*_#") for word in text.split() if any(c.isalnum() for c in word)]
+
+    value = t.get("label")
+    if isinstance(value, str) and not any(mark in value for mark in "?？"):
+        label = words(value)
+        if 3 <= len(label) <= 7:
+            return " ".join(label).upper()
+    candidates = t.get("youtube_titles") or []
+    for title in candidates:
+        if isinstance(title, str) and title.strip():
+            return " ".join(words(title)[:7]).rstrip(".,!?;:？").upper()
+    return ""
+
+
 def validate(t: dict) -> dict:
     titles = [s.strip() for s in t.get("youtube_titles", []) if isinstance(s, str) and s.strip()]
     if not titles:
         raise ValueError("model returned no titles")
     t["youtube_titles"] = [s[:100] for s in titles][:3]
+    t["label"] = label_text(t)
     words = str(t.get("thumbnail_text", "")).split()
     if not 1 <= len(words) <= 6:  # never chop a hook mid-sentence ("GTA 6 NPCS ARE"): ask again
         raise ValueError(f"hook has {len(words)} words")

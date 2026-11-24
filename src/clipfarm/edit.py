@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -25,6 +26,11 @@ W, H = 1080, 1920
 WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
 YELLOW, WHITE, BLACK = (255, 222, 0, 255), (255, 255, 255, 255), (0, 0, 0, 255)
 GREEN = (83, 252, 24, 255)
+RED = (255, 65, 65, 255)
+PUNCH_PUNCTUATION = ".,!?;:…—"
+WORD_PUNCTUATION = PUNCH_PUNCTUATION + "\"'“”‘’()[]{}"
+LABEL_STOP_WORDS = frozenset("A AN AND ARE AT BE FOR FROM HIS HER IN IS IT OF ON OR THE THEIR TO WITH".split())
+NUMBER = re.compile(r"[+-]?[$€£¥]?\d+(?:[,.]\d+)*(?:[KMB%$€£¥])?")
 LOGO_W = 520  # campaign logo width on the 1080-wide Short
 
 
@@ -32,7 +38,7 @@ LOGO_W = 520  # campaign logo width on the 1080-wide Short
 class CaptionStyle:
     words_per_line: int
     size: int
-    active: str  # "color" = active word recolored, "pill" = active word on a colored pill
+    active: str  # "color" and "pill" follow the active word; "card" shows a static phrase
     active_color: tuple
     base_color: tuple = WHITE
     stroke: int = 9
@@ -42,6 +48,7 @@ CAPTION_PRESETS = {
     "karaoke": CaptionStyle(2, 96, "color", GREEN),            # default (ClipSpeed/streamer clips)
     "hormozi": CaptionStyle(2, 92, "pill", YELLOW, stroke=8),  # active word: black on yellow pill
     "classic": CaptionStyle(3, 88, "color", YELLOW),           # our first version
+    "punch": CaptionStyle(3, 88, "card", RED),
 }
 
 
@@ -65,15 +72,28 @@ def transcribe(video: Path, model: str = WHISPER_MODEL) -> list[Word]:
     return words
 
 
-def chunk(words: list[Word], max_words: int = 3, max_gap: float = 0.6) -> list[list[Word]]:
+def chunk(words: list[Word], max_words: int = 3, max_gap: float = 0.6,
+          punctuation: str = ".?!") -> list[list[Word]]:
     out: list[list[Word]] = []
+    endings = tuple(punctuation)
     for w in words:
         if out and len(out[-1]) < max_words and w.start - out[-1][-1].end <= max_gap \
-                and not out[-1][-1].text.endswith((".", "?", "!")):
+                and not out[-1][-1].text.endswith(endings):
             out[-1].append(w)
         else:
             out.append([w])
     return out
+
+
+def _punch_cards(words: list[Word], max_words: int) -> list[list[Word]]:
+    # A caption correction can expand one timed word into a phrase.
+    split_words = []
+    for word in words:
+        tokens = word.text.split()
+        for i, token in enumerate(tokens):
+            step = (word.end - word.start) / len(tokens)
+            split_words.append(Word(word.start + i * step, word.start + (i + 1) * step, token))
+    return chunk(split_words, max_words, max_gap=0.25, punctuation=PUNCH_PUNCTUATION)
 
 
 def _font(size: int) -> ImageFont.FreeTypeFont:
@@ -101,7 +121,7 @@ def paste_logo(img: Image.Image, logo: Path, y: int, width: int = LOGO_W) -> Non
 
 def render_overlay(title: str, words: list[Word] | None, active: int, cap_y: int, title_y: int,
                    style: CaptionStyle = CAPTION_PRESETS["karaoke"], logo: Path | None = None,
-                   logo_y: int = 0) -> Image.Image:
+                   logo_y: int = 0, label: str = "") -> Image.Image:
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     if logo:
@@ -140,6 +160,7 @@ def render_overlay(title: str, words: list[Word] | None, active: int, cap_y: int
         size = style.size
         f = _font(size)
         toks = [w.text.upper() for w in words]
+        label_words = {w.strip(WORD_PUNCTUATION) for w in label.upper().split()} - LABEL_STOP_WORDS
         space = d.textlength(" ", font=f)
         widths = [d.textlength(t, font=f) for t in toks]
         total = sum(widths) + space * (len(toks) - 1)
@@ -160,6 +181,10 @@ def render_overlay(title: str, words: list[Word] | None, active: int, cap_y: int
                 d.text((x, cap_y), t, font=f, fill=BLACK, anchor="ls")
             else:
                 color = style.active_color if is_active and style.active == "color" else style.base_color
+                if style.active == "card":
+                    token = t.strip(WORD_PUNCTUATION)
+                    if token in label_words or NUMBER.fullmatch(token):
+                        color = style.active_color
                 d.text((x, cap_y), t, font=f, fill=color, stroke_width=style.stroke,
                        stroke_fill=BLACK, anchor="ls")
             x += widths[i] + space
@@ -171,18 +196,24 @@ LOGO_BAND = (560, 780)  # with a campaign logo: cam 560 px, gameplay 780 px, bla
 
 
 def _filter(layout: str, facecam: tuple[float, float, float, float] | None,
-            band: bool = False) -> tuple[str, int, int]:
+            band: bool = False, peak_window: tuple[float, float] | None = None) -> tuple[str, int, int]:
     """Returns (filter_complex producing [base], caption_y, title_y)."""
     if layout == "stack":
         if not facecam:
             raise SystemExit("stack layout needs --facecam x,y,w,h (fractions of the frame)")
         fx, fy, fw, fh = facecam
         top_h, bot_h = LOGO_BAND if band else (640, H - 640)
-        f = (f"[0:v]split=2[a][b];"
+        split = "split=3[a][b][c]" if peak_window else "split=2[a][b]"
+        output = "stack" if peak_window else "base"
+        f = (f"[0:v]{split};"
              f"[a]crop=iw*{fw}:ih*{fh}:iw*{fx}:ih*{fy},scale={W}:{top_h}:force_original_aspect_ratio=increase,"
              f"crop={W}:{top_h}[cam];"
              f"[b]crop=ih*{W}/{bot_h}:ih,scale={W}:{bot_h}[game];"
-             f"[cam][game]vstack=inputs=2,pad={W}:{H}:0:0:black,setsar=1[base]")
+             f"[cam][game]vstack=inputs=2,pad={W}:{H}:0:0:black,setsar=1[{output}]")
+        if peak_window:
+            start, end = peak_window
+            f += (f";[c]crop=ih*{W}/{H}:ih,scale={W}:{H},setsar=1[fullscreen];"
+                  f"[stack][fullscreen]overlay=enable='gte(t,{start:.3f})*lt(t,{end:.3f})'[base]")
         return f, top_h + 270, top_h  # banner centred on the seam: covers desk/chin strip, not the face
     if layout == "square":  # center square of the frame on blurred fill
         top = (H - W) // 2 - 60
@@ -203,8 +234,9 @@ def make_short(src: Path, out: Path, title: str = "", layout: str = "blur",
                facecam: tuple[float, float, float, float] | None = None,
                model: str = WHISPER_MODEL, captions: str = "karaoke",
                words_override: list[Word] | None = None, chat_events: list[dict] | None = None,
-               logo: Path | None = None, title_until: float | None = None) -> Path:
-    """title_until: show the hook banner only for the first N seconds (None = whole clip)."""
+               logo: Path | None = None, title_until: float | None = None, *,
+               label: str = "", peak_at: float | None = None, peak_fullscreen_s: float = 2.0) -> Path:
+    """Show the statement label throughout, or show the hook banner until title_until."""
     style = CAPTION_PRESETS[captions]
     dur = float(subprocess.check_output(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(src)]).strip())
@@ -217,12 +249,31 @@ def make_short(src: Path, out: Path, title: str = "", layout: str = "blur",
         words = transcribe(src, model)
         cache.write_text(json.dumps([w.__dict__ for w in words], ensure_ascii=False))
     log.info("%d caption words", len(words))
-    base_filter, cap_y, title_y = _filter(layout, facecam, band=bool(logo))
+    peak_window = None
+    if layout == "stack" and facecam and dur >= 8 and peak_at is not None and 0 <= peak_at < dur and peak_fullscreen_s > 0:
+        peak_window = (peak_at, min(dur, peak_at + peak_fullscreen_s))
+    base_filter, cap_y, title_y = _filter(layout, facecam, band=bool(logo), peak_window=peak_window)
+    label_y = title_y if layout == "stack" else (H - (W if layout == "square" else round(W * 9 / 16))) // 2
+    if label:
+        title, title_until = "", None
+    punch = captions == "punch"
+    caption_y = cap_y
+    if punch:
+        caption_y = title_y + (175 if label else 34) if layout == "stack" else 1180
 
     # caption timeline: (start, end, chunk, active_index)
     cap: list[tuple[float, float, list[Word] | None, int]] = []
     t = 0.0
-    for ch in chunk(words, style.words_per_line):
+    chunks = _punch_cards(words, style.words_per_line) if punch else chunk(words, style.words_per_line)
+    for index, ch in enumerate(chunks):
+        if punch:
+            s, e = max(ch[0].start, t), ch[-1].end + 0.15
+            if index + 1 < len(chunks):
+                e = min(e, chunks[index + 1][0].start)
+            if e > s:
+                cap.append((s, e, ch, -1))
+                t = e
+            continue
         for i, w in enumerate(ch):
             s = max(w.start, t)
             e = ch[i + 1].start if i + 1 < len(ch) else w.end + 0.15
@@ -259,7 +310,9 @@ def make_short(src: Path, out: Path, title: str = "", layout: str = "blur",
             key = (tuple(w.text for w in ch) if ch else (), act, vis, on)
             if key not in cache:
                 p = tmpd / f"o{len(cache):04d}.png"
-                img = render_overlay(title if on else "", ch, act, cap_y, title_y, style, logo, logo_y)
+                visible_title = title if on else ""
+                y = title_y + 235 if punch and layout == "stack" and visible_title else caption_y
+                img = render_overlay(visible_title, ch, act, y, title_y, style, logo, logo_y, label)
                 if vis:
                     from .chatoverlay import draw_chat
                     draw_chat(img, [chat_events[i] for i in vis], chat_box)
@@ -268,10 +321,18 @@ def make_short(src: Path, out: Path, title: str = "", layout: str = "blur",
             lines += [f"file '{cache[key]}'", f"duration {max(e - s, 0.001):.3f}"]
         lines.append(f"file '{cache[key]}'")  # concat demuxer needs the last file repeated
         (tmpd / "ov.txt").write_text("\n".join(lines))
-        fc = f"{base_filter};[1:v]format=rgba[ov];[base][ov]overlay=0:0:eof_action=repeat,format=yuv420p[v]"
+        base = "base"
+        label_input = []
+        if label:
+            label_path = tmpd / "label.png"
+            render_overlay(label, None, -1, 0, label_y).save(label_path)
+            label_input = ["-i", str(label_path)]
+            base_filter += ";[2:v]format=rgba[label];[base][label]overlay=0:0:eof_action=repeat[labeled]"
+            base = "labeled"
+        fc = f"{base_filter};[1:v]format=rgba[ov];[{base}][ov]overlay=0:0:eof_action=repeat,format=yuv420p[v]"
         out.parent.mkdir(parents=True, exist_ok=True)
         cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(src), "-f", "concat", "-safe", "0",
-               "-i", str(tmpd / "ov.txt"), "-filter_complex", fc, "-map", "[v]", "-map", "0:a?",
+               "-i", str(tmpd / "ov.txt"), *label_input, "-filter_complex", fc, "-map", "[v]", "-map", "0:a?",
                "-r", "30", "-c:v", "libx264", "-preset", "medium", "-crf", "20",
                "-c:a", "aac", "-b:a", "160k", "-t", f"{dur:.3f}", "-movflags", "+faststart", str(out)]
         subprocess.run(cmd, check=True)

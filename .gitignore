@@ -15,3 +15,9 @@ promo/node_modules/
 promo/out/
 promo/public/*.mp4
 promo/public/*.jpg
+
+# owner 2026-11-24: review/calibration run data (videos, exported owner reviews, render checks)
+review/batches/
+review/exports/
+review/edit-check*/
+review/viral/

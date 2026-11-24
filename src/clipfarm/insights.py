@@ -18,6 +18,7 @@ import os
 import re
 import statistics as st
 import time
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -94,16 +95,32 @@ def _ig(c, cfg: dict) -> list[dict]:
     me = P._data(P._run(c, "INSTAGRAM_GET_USER_INFO", {}, cfg)).get("id")
     media = P._data(P._run(c, "INSTAGRAM_GET_IG_USER_MEDIA", {"ig_user_id": me, "limit": 100,
                                                               "fields": "id,caption,timestamp,media_product_type,permalink"}, cfg))
+    base = ["views", "reach", "likes", "comments", "shares", "saved", "ig_reels_avg_watch_time"]
+    extended = [*base, "total_interactions", "ig_reels_video_view_total_time"]
     out = []
     for m in media.get("data") or []:
-        r = P._run(c, "INSTAGRAM_GET_IG_MEDIA_INSIGHTS", {"ig_media_id": m["id"], "metric": [
-            "views", "reach", "likes", "comments", "shares", "saved", "ig_reels_avg_watch_time"]}, cfg)
-        vals = {x["name"]: x["values"][0]["value"] for x in (P._data(r).get("data") or []) if x.get("values")}
+        vals = {}
+        for metric in (extended, base):
+            try:
+                r = P._run(c, "INSTAGRAM_GET_IG_MEDIA_INSIGHTS", {"ig_media_id": m["id"], "metric": metric}, cfg)
+            except Exception:  # A failed insight request for one reel must not interrupt the pull.
+                continue
+            data = P._data(r)
+            for entry in data.get("data") or []:
+                values = entry.get("values") or []
+                total = entry.get("total_value") or {}
+                value = total.get("value") if "value" in total else values[0].get("value") if values else None
+                if value is not None:
+                    vals[entry["name"]] = value
+            if r.get("successful") is not False and not (r.get("error") or data.get("error")):
+                break
         out.append({"ig_media_id": m["id"], "ig_url": m.get("permalink"), "caption": m.get("caption") or "",
                     "posted": m.get("timestamp"),
                     "ig_views": vals.get("views"), "ig_reach": vals.get("reach"), "ig_likes": vals.get("likes"),
                     "ig_comments": vals.get("comments"), "ig_shares": vals.get("shares"),
-                    "ig_saves": vals.get("saved"),
+                    "ig_saves": vals.get("saved"), "ig_interactions": vals.get("total_interactions"),
+                    "ig_watch_total_s": vals["ig_reels_video_view_total_time"] / 1000
+                    if vals.get("ig_reels_video_view_total_time") is not None else None,
                     "ig_avg_watch_s": round(vals["ig_reels_avg_watch_time"] / 1000, 1)
                     if vals.get("ig_reels_avg_watch_time") is not None else None})
     return out
@@ -202,11 +219,16 @@ def views(r: dict) -> int:
 def spearman(xs: list[float], ys: list[float]) -> float | None:
     if len(xs) < 5:
         return None
-    rank = lambda v: {x: i for i, x in enumerate(sorted(set(v)))}  # noqa: E731
-    rx, ry = rank(xs), rank(ys)
-    a, b = [rx[x] for x in xs], [ry[y] for y in ys]
+
+    def ranks(values: list[float]) -> list[float]:
+        by_value, start = {}, 0
+        for value, count in sorted(Counter(values).items()):
+            by_value[value] = start + (count - 1) / 2
+            start += count
+        return [by_value[value] for value in values]
+
     try:
-        return round(st.correlation(a, b), 2)
+        return round(st.correlation(ranks(xs), ranks(ys)), 2)
     except st.StatisticsError:
         return None
 

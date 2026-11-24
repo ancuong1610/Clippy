@@ -18,6 +18,15 @@ chat_video_offset_s = 0  # +N if our video arrives N s later than chat (tune aft
 enabled = true           # benchmark: xQc's GTA 6 seaplane crash = 95; gym/menus/NPC talk ~ 45
 min_hype = 90            # highlight bar: below this a clip is dropped
 
+[calibration]           # owner 2026-11-24: daily review batch for 2 weeks, then recalibrate the judge
+until = "2026-12-08"
+per_day = 40             # clips per daily batch
+min_hype = 60            # keep near-misses to calibrate both sides of the highlight bar
+spikes_per_vod = 40
+vod_pre_s = 45          # more room so the AI can include the setup each clip needs
+max_vods_per_day = 8
+skip_vods_before = 2935000000   # VODs up to 2026-11-19 were clipped live during launch week (already posted/skipped)
+
 [detector]               # defaults shown; can be overridden per channel with [channel.detector]
 ratio = 3.0              # chat must be >= 3x its own normal
 min_score = 8.0
@@ -73,6 +82,14 @@ until = "2026-12-05"
 
 # Not supported yet (Kick chat): adinross, n3on
 
+[edit]
+label = true            # persistent topic label replaces the opening hook banner
+peak_fullscreen = true  # switch stacks to full-screen gameplay at the payoff
+peak_fullscreen_s = 2.0 # seconds of full-screen gameplay
+captions = "punch"      # 1-3 words per card; use "karaoke" to restore the old default
+skip_dark = true        # start after a black/loading game screen at the window start (owner 2026-11-24)
+censor = true           # soften swear words in burned-in captions and label (f*ck); social captions untouched
+
 # ---- Posting ----
 # YouTube uploads automatically through Composio (free, COMPOSIO_API_KEY in .env). TikTok / Instagram
 # get a ready-to-paste caption file (manual_tiktok.txt / manual_instagram.txt) next to the video.
@@ -121,7 +138,7 @@ raw_days = 2            # raw clips that never made the queue
 # Per-post YT/IG/TikTok metrics joined with judge score, kind, streamer, hook, post hour -> queue/insights.jsonl,
 # report in reports/, AI-proposed lessons appended to learnings.md (the owner keeps or drops them).
 [insights]
-auto = true
+auto = false   # owner 2026-11-24: analytics once a week (Sunday review task), not daily inside post --watch
 
 # ---- Content Rewards (`clipfarm rewards`; auto = daily, right after insights, inside `post --watch`) ----
 # Reads the public GTA VI campaign list, matches campaigns to our streamers, drafts config for new ones (never joins

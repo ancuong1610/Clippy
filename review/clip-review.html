@@ -104,7 +104,17 @@ function card(c) {
   m.append(el("span", { class: "tag hype" }, "hype " + c.hype), el("span", { class: "tag" }, c.streamer));
   if (c.campaign) m.append(el("span", { class: "tag" }, CAMP[c.campaign] || c.campaign));
   if (c.reason) m.append(el("span", { class: "tag flag" }, c.reason.replace("risk flagged: ", "AI cảnh báo: ")));
+  if (c.queue === "posted") m.append(el("span", { class: "tag" }, "đã đăng"));
+  if (c.batch && c.batch !== "posted") m.append(el("span", { class: "tag" }, "đợt " + c.batch));
   f.append(m);
+  const j = c.judge || {};
+  const bits = [];
+  if (j.visual != null) bits.push("hình " + j.visual);
+  if (j.bonus) bits.push("chat +" + Math.round(j.bonus));
+  if (j.kind) bits.push(j.kind);
+  if (j.cutscene) bits.push("cutscene");
+  if (c.views && typeof c.views === "object") for (const [p, n] of Object.entries(c.views)) if (n != null) bits.push(p + " " + Number(n).toLocaleString("vi-VN") + " view");
+  if (bits.length) f.append(el("p", { class: "payoff" }, bits.join(" · ")));
   if (c.payoff) f.append(el("p", { class: "payoff" }, c.payoff));
   box.append(f);
   const vd = el("div", { class: "verdict" });
